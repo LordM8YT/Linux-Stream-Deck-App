@@ -5,6 +5,8 @@ function registerAppHandlers(runtime) {
   ipcMain.handle(CHANNELS.GET_BOOTSTRAP_STATE, async () => runtime.getBootstrapState());
   ipcMain.handle(CHANNELS.RESCAN_DEVICES, async () => runtime.rescanDevices());
   ipcMain.handle(CHANNELS.RELOAD_PLUGINS, async () => runtime.reloadPlugins());
+  ipcMain.handle(CHANNELS.INSPECT_PLUGIN_SOURCE, async (_event, payload) => runtime.inspectPluginSource(payload));
+  ipcMain.handle(CHANNELS.IMPORT_PLUGIN, async (_event, payload) => runtime.importPlugin(payload));
   ipcMain.handle(CHANNELS.ASSIGN_ACTION, async (_event, payload) => runtime.assignAction(payload));
   ipcMain.handle(CHANNELS.UPDATE_ASSIGNMENT_CONFIG, async (_event, payload) => runtime.updateAssignmentConfig(payload));
   ipcMain.handle(CHANNELS.CLEAR_ACTION, async (_event, payload) => runtime.clearAction(payload));

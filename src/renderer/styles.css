@@ -709,6 +709,7 @@ button {
 
 .library-action__copy span,
 .library-action__tag,
+.plugin-directory-card__source,
 .plugin-directory-card__root,
 .field-hint,
 .metadata-list {
@@ -727,6 +728,7 @@ button {
 }
 
 .plugin-directory-card,
+.plugin-import-card,
 .plugin-error,
 .config-form {
   display: grid;
@@ -737,12 +739,29 @@ button {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.plugin-import-card__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.plugin-import-card__copy h3,
+.plugin-import-card__copy p {
+  margin: 0;
+}
+
+.plugin-import-card__copy p {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .plugin-directory-card__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
+.plugin-directory-card__source,
 .plugin-directory-card__root {
   word-break: break-all;
 }

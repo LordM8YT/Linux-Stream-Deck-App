@@ -88,6 +88,7 @@ Responsibilities:
 Files:
 
 - `src/main/services/plugins/PluginManager.js`
+- `src/main/services/plugins/PluginImportService.js`
 - `plugins/*`
 
 Responsibilities:
@@ -96,6 +97,8 @@ Responsibilities:
 - validate `manifest.json`
 - load `index.js`
 - register action handlers with a single `registerAction()` function
+- import plugin folders from GitHub URLs into the writable user plugin directory
+- leave room for marketplace-feed resolvers that eventually point to plugin sources
 - expose a catalog back to the renderer
 
 ## Data Flow

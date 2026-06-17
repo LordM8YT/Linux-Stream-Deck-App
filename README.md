@@ -90,6 +90,8 @@ In a packaged app build:
 
 - bundled plugins ship inside the app
 - user plugins are loaded from the app data plugin folder
+- plugins can be imported from GitHub links directly in the Plugins tab
+- marketplace JSON feeds can later point to plugin sources without changing the core import UI
 
 That gives testers a writable plugin location even when OpenDeck is installed from an RPM.
 

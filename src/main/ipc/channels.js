@@ -2,6 +2,8 @@ const CHANNELS = {
   GET_BOOTSTRAP_STATE: 'app:get-bootstrap-state',
   RESCAN_DEVICES: 'streamDeck:rescan-devices',
   RELOAD_PLUGINS: 'plugins:reload',
+  INSPECT_PLUGIN_SOURCE: 'plugins:inspect-source',
+  IMPORT_PLUGIN: 'plugins:import',
   ASSIGN_ACTION: 'layout:assign-action',
   UPDATE_ASSIGNMENT_CONFIG: 'layout:update-assignment-config',
   CLEAR_ACTION: 'layout:clear-action',

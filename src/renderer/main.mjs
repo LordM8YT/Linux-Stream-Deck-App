@@ -8,6 +8,10 @@ const elements = {
   pluginCount: document.querySelector('#plugin-count'),
   pluginList: document.querySelector('#plugin-list'),
   pluginDirectoryList: document.querySelector('#plugin-directory-list'),
+  pluginImportInput: document.querySelector('#plugin-import-input'),
+  pluginImportButton: document.querySelector('#plugin-import-button'),
+  pluginPreviewButton: document.querySelector('#plugin-preview-button'),
+  pluginImportMetaText: document.querySelector('#plugin-import-meta-text'),
   deviceStatus: document.querySelector('#device-status'),
   obsStatusBadge: document.querySelector('#obs-status-badge'),
   obsUrlInput: document.querySelector('#obs-url-input'),
@@ -78,6 +82,57 @@ elements.rescanButton.addEventListener('click', async () => {
 elements.reloadPluginsButton.addEventListener('click', async () => {
   setFeedback('Reloading plugin folders from disk...');
   await refreshState(() => getAppApi().reloadPlugins());
+});
+
+elements.pluginPreviewButton.addEventListener('click', async () => {
+  const sourceUrl = elements.pluginImportInput.value.trim();
+
+  if (!sourceUrl) {
+    setFeedback('Paste a plugin URL first so OpenDeck can inspect it.', true);
+    return;
+  }
+
+  setFeedback('Inspecting plugin source...');
+
+  try {
+    const preview = await getAppApi().inspectPluginSource({ sourceUrl });
+    const actionLabel = preview.actionCount === 1 ? 'action' : 'actions';
+    const fileLabel = preview.fileCount === 1 ? 'file' : 'files';
+
+    elements.pluginImportMetaText.textContent = `Ready to import ${preview.pluginName} ${preview.pluginVersion}. ${preview.actionCount} ${actionLabel}, ${preview.fileCount} ${fileLabel}.`;
+    setFeedback(`Found plugin "${preview.pluginName}" from ${preview.resolver}.`);
+  } catch (error) {
+    console.error(error);
+    setFeedback(error.message || 'Failed to inspect the plugin source.', true);
+  }
+});
+
+elements.pluginImportButton.addEventListener('click', async () => {
+  const sourceUrl = elements.pluginImportInput.value.trim();
+
+  if (!sourceUrl) {
+    setFeedback('Paste a plugin URL first so OpenDeck can import it.', true);
+    return;
+  }
+
+  setFeedback('Importing plugin into your local plugin folder...');
+
+  try {
+    const result = await getAppApi().importPlugin({ sourceUrl });
+
+    if (result.state) {
+      state.data = result.state;
+      ensureSelectionIsValid();
+      renderApp();
+    }
+
+    elements.pluginImportInput.value = '';
+    elements.pluginImportMetaText.textContent = `Installed ${result.pluginName} into ${result.installRoot}.`;
+    setFeedback(`Imported plugin "${result.pluginName}" successfully.`);
+  } catch (error) {
+    console.error(error);
+    setFeedback(error.message || 'Failed to import the plugin.', true);
+  }
 });
 
 elements.actionSearchInput.addEventListener('input', () => {
@@ -175,6 +230,8 @@ function renderBridgeAvailability() {
 
   elements.rescanButton.disabled = offline;
   elements.reloadPluginsButton.disabled = offline;
+  elements.pluginImportButton.disabled = offline;
+  elements.pluginPreviewButton.disabled = offline;
   elements.obsConnectButton.disabled = offline;
   elements.obsDisconnectButton.disabled = offline || !state.data.obs.connected;
   elements.obsRefreshScenesButton.disabled = offline || !state.data.obs.connected;
@@ -261,6 +318,7 @@ function renderLibraries() {
   elements.pluginsTabButton.setAttribute('aria-selected', String(!showKeys));
 
   renderActionLibrary();
+  renderPluginImportPanel();
   renderPluginDirectory();
 }
 
@@ -382,7 +440,9 @@ function renderPluginDirectory() {
       <div class="plugin-directory-card__meta">
         <span class="rail-badge">${plugin.version}</span>
         <span class="rail-badge">${plugin.actions.length} actions</span>
+        <span class="rail-badge">${plugin.source?.resolver ? 'Imported' : 'Bundled'}</span>
       </div>
+      <div class="plugin-directory-card__source">${getPluginSourceText(plugin)}</div>
       <div class="plugin-directory-card__root">${plugin.root}</div>
     `;
     elements.pluginDirectoryList.append(card);
@@ -393,6 +453,21 @@ function renderPluginDirectory() {
     empty.className = 'empty-state';
     empty.textContent = 'No plugins matched this search.';
     elements.pluginDirectoryList.append(empty);
+  }
+}
+
+function renderPluginImportPanel() {
+  const pluginDirectory = state.data?.app?.pluginDirectory || 'plugins';
+  const bundledPluginDirectory = state.data?.app?.bundledPluginDirectory || 'plugins';
+  const examples = state.data?.app?.pluginImportExamples || [];
+  const firstExample = examples[0];
+
+  if (document.activeElement !== elements.pluginImportInput && !elements.pluginImportInput.value) {
+    elements.pluginImportInput.placeholder = firstExample || 'https://github.com/owner/repo/tree/main/plugin-folder';
+  }
+
+  if (!elements.pluginImportMetaText.textContent || elements.pluginImportMetaText.textContent === 'Imported plugins are installed into your writable user plugin folder.') {
+    elements.pluginImportMetaText.textContent = `Imports land in ${pluginDirectory}. Bundled plugins stay in ${bundledPluginDirectory}.`;
   }
 }
 
@@ -934,6 +1009,18 @@ function getPlugin(pluginId) {
   return state.data.plugins.plugins.find((plugin) => plugin.id === pluginId) || null;
 }
 
+function getPluginSourceText(plugin) {
+  if (!plugin.source?.sourceUrl) {
+    return 'Bundled with OpenDeck.';
+  }
+
+  const importedAt = plugin.source.importedAt
+    ? ` Imported ${new Date(plugin.source.importedAt).toLocaleString()}.`
+    : '';
+
+  return `Imported from ${plugin.source.sourceUrl}.${importedAt}`;
+}
+
 function getDisplayLabel(slot, action) {
   return slot.assignment?.config?.sceneName || action.defaultLabel;
 }
@@ -1060,7 +1147,12 @@ function createFallbackBootstrapState() {
   return {
     app: {
       name: 'OpenDeck',
-      pluginDirectory: 'plugins'
+      pluginDirectory: 'plugins',
+      bundledPluginDirectory: 'plugins',
+      pluginImportExamples: [
+        'https://github.com/owner/repo/tree/main/plugin-folder',
+        'https://example.com/opendeck-marketplace.json#plugin-id'
+      ]
     },
     deck: {
       driver: {

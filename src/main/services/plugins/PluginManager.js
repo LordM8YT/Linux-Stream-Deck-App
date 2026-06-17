@@ -45,6 +45,7 @@ class PluginManager {
         version: plugin.version,
         description: plugin.description,
         root: plugin.root,
+        source: plugin.source,
         actions: plugin.actions
       })),
       actions: Array.from(this.actions.values()).map((action) => this.serializeAction(action)),
@@ -58,6 +59,10 @@ class PluginManager {
 
   getAction(actionId) {
     return this.actions.get(actionId) || null;
+  }
+
+  getPlugin(pluginId) {
+    return this.plugins.find((plugin) => plugin.id === pluginId) || null;
   }
 
   getDefaultConfigForAction(actionId) {
@@ -109,6 +114,7 @@ class PluginManager {
     const manifestRaw = await fs.readFile(manifestPath, 'utf8');
     const manifest = JSON.parse(manifestRaw);
     validateManifest(manifest);
+    const source = await readPluginSourceMetadata(pluginRoot);
 
     const entryPath = path.resolve(pluginRoot, manifest.entry || 'index.js');
     delete require.cache[require.resolve(entryPath)];
@@ -171,6 +177,7 @@ class PluginManager {
       version: manifest.version,
       description: manifest.description || '',
       root: pluginRoot,
+      source,
       actions: loadedActions
     });
   }
@@ -242,6 +249,32 @@ function normalizeConfigFields(configFields) {
   }));
 }
 
+async function readPluginSourceMetadata(pluginRoot) {
+  const metadataPath = path.join(pluginRoot, '.opendeck-source.json');
+
+  try {
+    const metadataRaw = await fs.readFile(metadataPath, 'utf8');
+    const metadata = JSON.parse(metadataRaw);
+
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+
+    return {
+      resolver: typeof metadata.resolver === 'string' ? metadata.resolver : null,
+      sourceUrl: typeof metadata.sourceUrl === 'string' ? metadata.sourceUrl : null,
+      reference: typeof metadata.reference === 'string' ? metadata.reference : null,
+      importedAt: typeof metadata.importedAt === 'string' ? metadata.importedAt : null
+    };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 function createPluginLogger(pluginId) {
   return {
     info: (...args) => console.log(`[plugin:${pluginId}]`, ...args),
@@ -261,5 +294,6 @@ function normalizePluginRoots(pluginRoots) {
 }
 
 module.exports = {
-  PluginManager
+  PluginManager,
+  validateManifest
 };

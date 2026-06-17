@@ -9,6 +9,7 @@ const filesToCheck = [
   'src/main/runtime/AppRuntime.js',
   'src/main/services/layout/LayoutService.js',
   'src/main/services/obs/ObsService.js',
+  'src/main/services/plugins/PluginImportService.js',
   'src/main/services/plugins/PluginManager.js',
   'src/main/services/storage/AppStateStore.js',
   'src/main/services/streamDeck/defaultDeckProfile.js',

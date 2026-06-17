@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { LayoutService } = require('../services/layout/LayoutService');
 const { ObsService } = require('../services/obs/ObsService');
+const { PluginImportService } = require('../services/plugins/PluginImportService');
 const { PluginManager } = require('../services/plugins/PluginManager');
 const { AppStateStore } = require('../services/storage/AppStateStore');
 const { StreamDeckService } = require('../services/streamDeck/StreamDeckService');
@@ -30,6 +31,10 @@ class AppRuntime {
           obs: this.obsService
         }
       })
+    });
+    this.pluginImportService = new PluginImportService({
+      pluginManager: this.pluginManager,
+      userPluginsRoot: this.userPluginsDir
     });
     this.streamDeckService = new StreamDeckService({
       onButtonDown: ({ slotId }) => {
@@ -68,7 +73,12 @@ class AppRuntime {
       app: {
         name: 'OpenDeck',
         pluginDirectory: this.userPluginsDir,
-        bundledPluginDirectory: this.bundledPluginsDir
+        bundledPluginDirectory: this.bundledPluginsDir,
+        pluginImportExamples: [
+          'https://github.com/owner/repo',
+          'https://github.com/owner/repo/tree/main/plugin-folder',
+          'https://example.com/opendeck-marketplace.json#plugin-id'
+        ]
       },
       deck: deckState,
       obs: this.obsService.getState(),
@@ -85,6 +95,28 @@ class AppRuntime {
   async reloadPlugins() {
     await this.pluginManager.scan();
     return this.getBootstrapState();
+  }
+
+  async inspectPluginSource({ sourceUrl }) {
+    if (!sourceUrl) {
+      throw new Error('sourceUrl is required to inspect a plugin source.');
+    }
+
+    return this.pluginImportService.inspectSource(sourceUrl);
+  }
+
+  async importPlugin({ sourceUrl }) {
+    if (!sourceUrl) {
+      throw new Error('sourceUrl is required to import a plugin.');
+    }
+
+    const result = await this.pluginImportService.installFromUrl(sourceUrl);
+    await this.pluginManager.scan();
+
+    return {
+      ...result,
+      state: await this.getBootstrapState()
+    };
   }
 
   async assignAction({ slotId, actionId }) {
