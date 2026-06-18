@@ -12,10 +12,12 @@ const filesToCheck = [
   'src/main/services/plugins/PluginImportService.js',
   'src/main/services/plugins/PluginManager.js',
   'src/main/services/storage/AppStateStore.js',
+  'src/main/services/system/SystemActionService.js',
   'src/main/services/streamDeck/defaultDeckProfile.js',
   'src/main/services/streamDeck/StreamDeckService.js',
   'src/renderer/main.mjs',
   'src/renderer/previewRenderer.mjs',
+  'plugins/com.linuxstreamdeck.core/index.js',
   'plugins/com.linuxstreamdeck.demo.hello/index.js',
   'plugins/com.linuxstreamdeck.obs/index.js'
 ];

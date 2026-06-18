@@ -291,8 +291,12 @@ function renderObsPanel() {
 
   if (obs.connected) {
     const sceneLabel = obs.scenes.length === 1 ? 'scene' : 'scenes';
+    const inputLabel = obs.inputs.length === 1 ? 'input' : 'inputs';
     const versionText = obs.obsWebSocketVersion ? `OBS WS ${obs.obsWebSocketVersion}` : 'Connected';
-    elements.obsMetaText.textContent = `${versionText}. ${obs.scenes.length} ${sceneLabel} available.`;
+    const streamText = obs.stream.active ? 'Streaming live' : 'Stream idle';
+    const recordText = obs.record.active ? (obs.record.paused ? 'Recording paused' : 'Recording live') : 'Record idle';
+    const studioText = obs.studioModeEnabled ? 'Studio mode on' : 'Studio mode off';
+    elements.obsMetaText.textContent = `${versionText}. ${obs.scenes.length} ${sceneLabel}, ${obs.inputs.length} ${inputLabel}. ${streamText}, ${recordText}, ${studioText}.`;
   } else if (obs.setupHint) {
     elements.obsMetaText.textContent = `${obs.setupHint}${obs.lastError ? ` Last error: ${obs.lastError}` : ''}`;
   } else if (obs.lastError) {
@@ -693,10 +697,10 @@ function createConfigControl(slot, field) {
   } else {
     const placeholderOption = document.createElement('option');
     placeholderOption.value = '';
-    placeholderOption.textContent = resolveFieldPlaceholder(field);
+    placeholderOption.textContent = resolveFieldPlaceholder(slot, field);
     control.append(placeholderOption);
 
-    const options = resolveFieldOptions(field);
+    const options = resolveFieldOptions(slot, field);
 
     for (const option of options) {
       const optionElement = document.createElement('option');
@@ -716,28 +720,64 @@ function createConfigControl(slot, field) {
   }
 
   control.addEventListener('change', async () => {
-    await updateAssignmentConfig(slot.slotId, {
+    const configPatch = {
       [field.id]: control.value
-    });
+    };
+
+    for (const dependencyFieldId of field.resetOnChange || []) {
+      configPatch[dependencyFieldId] = '';
+    }
+
+    await updateAssignmentConfig(slot.slotId, configPatch);
     setFeedback(`Updated ${field.label.toLowerCase()} for key ${slot.index + 1}.`);
   });
 
   return control;
 }
 
-function resolveFieldPlaceholder(field) {
+function resolveFieldPlaceholder(slot, field) {
   if (field.optionsSource === 'obs.scenes' && state.data.obs.scenes.length === 0) {
     return 'Connect OBS to load scenes';
+  }
+
+  if (field.optionsSource === 'obs.inputs' && state.data.obs.inputs.length === 0) {
+    return 'Connect OBS to load inputs';
+  }
+
+  if (field.optionsSource === 'obs.sceneItems') {
+    if (!slot.assignment?.config?.sceneName) {
+      return 'Select a scene first';
+    }
+
+    const sceneItems = getSceneItemsForSlot(slot);
+
+    if (!sceneItems.length) {
+      return 'No sources found in that scene';
+    }
   }
 
   return field.placeholder || `Select ${field.label}`;
 }
 
-function resolveFieldOptions(field) {
+function resolveFieldOptions(slot, field) {
   if (field.optionsSource === 'obs.scenes') {
     return state.data.obs.scenes.map((scene) => ({
       value: scene.sceneName,
       label: scene.sceneName
+    }));
+  }
+
+  if (field.optionsSource === 'obs.inputs') {
+    return state.data.obs.inputs.map((input) => ({
+      value: input.inputName,
+      label: buildInputOptionLabel(input)
+    }));
+  }
+
+  if (field.optionsSource === 'obs.sceneItems') {
+    return getSceneItemsForSlot(slot).map((sceneItem) => ({
+      value: String(sceneItem.sceneItemId),
+      label: sceneItem.sourceName
     }));
   }
 
@@ -904,6 +944,10 @@ function splitPluginIntoSections(plugin) {
     return buildCoreActionSections(plugin);
   }
 
+  if (plugin.id === 'com.linuxstreamdeck.obs') {
+    return buildObsActionSections(plugin);
+  }
+
   return [
     {
       id: `plugin:${plugin.id}`,
@@ -913,6 +957,45 @@ function splitPluginIntoSections(plugin) {
       actions: plugin.actions
     }
   ];
+}
+
+function buildObsActionSections(plugin) {
+  const groups = new Map([
+    ['scenes', {
+      id: `plugin:${plugin.id}:scenes`,
+      title: 'OBS Scenes',
+      subtitle: 'Scene switches and source visibility',
+      plugin,
+      actions: []
+    }],
+    ['audio', {
+      id: `plugin:${plugin.id}:audio`,
+      title: 'OBS Audio',
+      subtitle: 'Mute and input control',
+      plugin,
+      actions: []
+    }],
+    ['streaming', {
+      id: `plugin:${plugin.id}:streaming`,
+      title: 'Streaming & Recording',
+      subtitle: 'Output controls for live and record',
+      plugin,
+      actions: []
+    }],
+    ['studio', {
+      id: `plugin:${plugin.id}:studio`,
+      title: 'Studio Mode',
+      subtitle: 'Preview-to-program controls',
+      plugin,
+      actions: []
+    }]
+  ]);
+
+  for (const action of plugin.actions) {
+    groups.get(categorizeObsAction(action)).actions.push(action);
+  }
+
+  return Array.from(groups.values()).filter((section) => section.actions.length > 0);
 }
 
 function buildCoreActionSections(plugin) {
@@ -959,6 +1042,24 @@ function categorizeCoreAction(action) {
   }
 
   return 'system';
+}
+
+function categorizeObsAction(action) {
+  const signature = `${action.id} ${action.name} ${action.defaultLabel}`.toLowerCase();
+
+  if (signature.includes('scene') || signature.includes('source')) {
+    return 'scenes';
+  }
+
+  if (signature.includes('mute') || signature.includes('audio') || signature.includes('input')) {
+    return 'audio';
+  }
+
+  if (signature.includes('stream') || signature.includes('record')) {
+    return 'streaming';
+  }
+
+  return 'studio';
 }
 
 function getDeckKeySize(profile) {
@@ -1022,12 +1123,59 @@ function getPluginSourceText(plugin) {
 }
 
 function getDisplayLabel(slot, action) {
-  return slot.assignment?.config?.sceneName || action.defaultLabel;
+  return slot.assignment?.config?.sceneName
+    || slot.assignment?.config?.inputName
+    || getCoreActionDisplayLabel(slot.assignment?.config)
+    || getSceneItemNameFromSlot(slot)
+    || action.defaultLabel;
+}
+
+function getCoreActionDisplayLabel(config = {}) {
+  return config.url
+    || config.command
+    || config.commandLine
+    || null;
 }
 
 function setFeedback(message, isError = false) {
   elements.feedbackMessage.textContent = message;
   elements.feedbackMessage.classList.toggle('feedback-message--error', isError);
+}
+
+function getSceneItemsForSlot(slot) {
+  const sceneName = slot.assignment?.config?.sceneName;
+
+  if (!sceneName) {
+    return [];
+  }
+
+  return state.data.obs.sceneItemsBySceneName?.[sceneName] || [];
+}
+
+function getSceneItemNameFromSlot(slot) {
+  const rawSceneItemId = slot.assignment?.config?.sceneItemId;
+  const sceneItemId = Number(rawSceneItemId);
+
+  if (!rawSceneItemId || Number.isNaN(sceneItemId)) {
+    return null;
+  }
+
+  const sceneItem = getSceneItemsForSlot(slot).find((candidate) => candidate.sceneItemId === sceneItemId);
+  return sceneItem?.sourceName || null;
+}
+
+function buildInputOptionLabel(input) {
+  const parts = [input.inputName];
+
+  if (input.inputKind) {
+    parts.push(input.inputKind);
+  }
+
+  if (input.inputMuted) {
+    parts.push('muted');
+  }
+
+  return parts.join(' | ');
 }
 
 function createFallbackBootstrapState() {
@@ -1047,17 +1195,17 @@ function createFallbackBootstrapState() {
       id: 'com.linuxstreamdeck.obs',
       name: 'OBS Studio',
       version: '0.1.0',
-      description: 'Live scene switching for OBS Studio.',
+      description: 'OBS scenes, audio, streaming, recording, and studio mode controls.',
       root: 'plugins/com.linuxstreamdeck.obs',
       actions: [
         {
           qualifiedId: 'com.linuxstreamdeck.obs:scene-switch',
           pluginId: 'com.linuxstreamdeck.obs',
           id: 'scene-switch',
-          name: 'Scene Switch',
+          name: 'Switch Scene',
           description: 'Switch directly to a chosen OBS scene.',
-          defaultLabel: 'Scene',
-          accentColor: '#56b3ff',
+          defaultLabel: 'SCENE',
+          accentColor: '#ff5d73',
           icon: null,
           configFields: [
             {
@@ -1071,6 +1219,96 @@ function createFallbackBootstrapState() {
               options: []
             }
           ]
+        },
+        {
+          qualifiedId: 'com.linuxstreamdeck.obs:toggle-input-mute',
+          pluginId: 'com.linuxstreamdeck.obs',
+          id: 'toggle-input-mute',
+          name: 'Toggle Input Mute',
+          description: 'Toggle mute for a selected OBS input.',
+          defaultLabel: 'AUDIO',
+          accentColor: '#ffb366',
+          icon: null,
+          configFields: [
+            {
+              id: 'inputName',
+              label: 'Input',
+              type: 'select',
+              description: 'Connect OBS to populate live inputs.',
+              defaultValue: '',
+              placeholder: 'Connect OBS to load inputs',
+              optionsSource: 'obs.inputs',
+              options: [],
+              resetOnChange: []
+            }
+          ]
+        },
+        {
+          qualifiedId: 'com.linuxstreamdeck.obs:start-stream',
+          pluginId: 'com.linuxstreamdeck.obs',
+          id: 'start-stream',
+          name: 'Start Streaming',
+          description: 'Start the OBS stream output.',
+          defaultLabel: 'STREAM',
+          accentColor: '#ff6f7f',
+          icon: null,
+          configFields: []
+        },
+        {
+          qualifiedId: 'com.linuxstreamdeck.obs:start-record',
+          pluginId: 'com.linuxstreamdeck.obs',
+          id: 'start-record',
+          name: 'Start Recording',
+          description: 'Start the OBS recording output.',
+          defaultLabel: 'REC',
+          accentColor: '#ff4f68',
+          icon: null,
+          configFields: []
+        },
+        {
+          qualifiedId: 'com.linuxstreamdeck.obs:studio-transition',
+          pluginId: 'com.linuxstreamdeck.obs',
+          id: 'studio-transition',
+          name: 'Trigger Studio Transition',
+          description: 'Trigger the active studio mode transition.',
+          defaultLabel: 'CUT',
+          accentColor: '#79a6ff',
+          icon: null,
+          configFields: []
+        },
+        {
+          qualifiedId: 'com.linuxstreamdeck.obs:toggle-source-visibility',
+          pluginId: 'com.linuxstreamdeck.obs',
+          id: 'toggle-source-visibility',
+          name: 'Toggle Source Visibility',
+          description: 'Toggle visibility for a source inside a selected scene.',
+          defaultLabel: 'SOURCE',
+          accentColor: '#8f6dff',
+          icon: null,
+          configFields: [
+            {
+              id: 'sceneName',
+              label: 'Scene',
+              type: 'select',
+              description: 'Choose the scene that contains the source you want to toggle.',
+              defaultValue: '',
+              placeholder: 'Choose a scene',
+              optionsSource: 'obs.scenes',
+              options: [],
+              resetOnChange: ['sceneItemId']
+            },
+            {
+              id: 'sceneItemId',
+              label: 'Source',
+              type: 'select',
+              description: 'Choose a source inside the selected scene.',
+              defaultValue: '',
+              placeholder: 'Choose a source',
+              optionsSource: 'obs.sceneItems',
+              options: [],
+              resetOnChange: []
+            }
+          ]
         }
       ]
     },
@@ -1078,41 +1316,121 @@ function createFallbackBootstrapState() {
       id: 'com.linuxstreamdeck.core',
       name: 'Core Actions',
       version: '0.1.0',
-      description: 'Basic navigation and device actions for the first alpha.',
+      description: 'Built-in OpenDeck actions for URLs, app launching, and shell commands.',
       root: 'plugins/com.linuxstreamdeck.core',
       actions: [
         {
-          qualifiedId: 'com.linuxstreamdeck.core:create-folder',
+          qualifiedId: 'com.linuxstreamdeck.core:open-url',
           pluginId: 'com.linuxstreamdeck.core',
-          id: 'create-folder',
-          name: 'Create Folder',
-          description: 'Create a nested page or folder layout.',
-          defaultLabel: 'Folder',
-          accentColor: '#d6d6d6',
+          id: 'open-url',
+          name: 'Open URL',
+          description: 'Open a website or custom protocol target from a Stream Deck key.',
+          defaultLabel: 'URL',
+          accentColor: '#66a7ff',
           icon: null,
-          configFields: []
+          configFields: [
+            {
+              id: 'url',
+              label: 'URL or protocol',
+              type: 'text',
+              description: 'Use a full URL like https://obsproject.com or a custom protocol like steam://run/730.',
+              defaultValue: '',
+              placeholder: 'https://example.com',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            }
+          ]
         },
         {
-          qualifiedId: 'com.linuxstreamdeck.core:next-page',
+          qualifiedId: 'com.linuxstreamdeck.core:launch-app',
           pluginId: 'com.linuxstreamdeck.core',
-          id: 'next-page',
-          name: 'Next Page',
-          description: 'Move to the next page of keys.',
-          defaultLabel: 'Next',
-          accentColor: '#d6d6d6',
+          id: 'launch-app',
+          name: 'Launch App',
+          description: 'Launch an installed application or executable path in the background.',
+          defaultLabel: 'APP',
+          accentColor: '#73d39d',
           icon: null,
-          configFields: []
+          configFields: [
+            {
+              id: 'command',
+              label: 'App or executable',
+              type: 'text',
+              description: 'Use an executable name from PATH like firefox or a full path to an app or script.',
+              defaultValue: '',
+              placeholder: 'firefox',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            },
+            {
+              id: 'args',
+              label: 'Arguments',
+              type: 'text',
+              description: 'Optional arguments. Quotes are supported for paths with spaces.',
+              defaultValue: '',
+              placeholder: '--new-window https://twitch.tv',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            },
+            {
+              id: 'workingDirectory',
+              label: 'Working directory',
+              type: 'text',
+              description: 'Optional start folder. Use ~ for your home directory.',
+              defaultValue: '',
+              placeholder: '~/Projects',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            }
+          ]
         },
         {
-          qualifiedId: 'com.linuxstreamdeck.core:sleep',
+          qualifiedId: 'com.linuxstreamdeck.core:run-command',
           pluginId: 'com.linuxstreamdeck.core',
-          id: 'sleep',
-          name: 'Sleep Deck',
-          description: 'Put the Stream Deck display to sleep.',
-          defaultLabel: 'Sleep',
-          accentColor: '#d6d6d6',
+          id: 'run-command',
+          name: 'Run Command',
+          description: 'Run a shell command directly from a key and wait for it to finish.',
+          defaultLabel: 'CMD',
+          accentColor: '#f0b563',
           icon: null,
-          configFields: []
+          configFields: [
+            {
+              id: 'commandLine',
+              label: 'Command line',
+              type: 'text',
+              description: 'Run a shell command. Keep it short and predictable for live use.',
+              defaultValue: '',
+              placeholder: 'echo OpenDeck',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            },
+            {
+              id: 'workingDirectory',
+              label: 'Working directory',
+              type: 'text',
+              description: 'Optional start folder. Use ~ for your home directory.',
+              defaultValue: '',
+              placeholder: '~/Projects',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            },
+            {
+              id: 'timeoutMs',
+              label: 'Timeout (ms)',
+              type: 'number',
+              description: 'How long OpenDeck should wait before failing the command.',
+              defaultValue: 15000,
+              placeholder: '15000',
+              optionsSource: null,
+              options: [],
+              resetOnChange: []
+            }
+          ]
         }
       ]
     }
@@ -1121,8 +1439,10 @@ function createFallbackBootstrapState() {
   const actions = plugins.flatMap((plugin) => plugin.actions);
   const assignmentsBySlotId = {
     'button:0': {
-      actionId: 'com.linuxstreamdeck.core:create-folder',
-      config: {},
+      actionId: 'com.linuxstreamdeck.core:open-url',
+      config: {
+        url: 'https://www.twitch.tv/linuxgamerlife'
+      },
       assignedAt: new Date().toISOString()
     },
     'button:1': {
@@ -1133,12 +1453,42 @@ function createFallbackBootstrapState() {
       assignedAt: new Date().toISOString()
     },
     'button:2': {
-      actionId: 'com.linuxstreamdeck.core:next-page',
+      actionId: 'com.linuxstreamdeck.obs:toggle-input-mute',
+      config: {
+        inputName: 'Microphone'
+      },
+      assignedAt: new Date().toISOString()
+    },
+    'button:4': {
+      actionId: 'com.linuxstreamdeck.core:launch-app',
+      config: {
+        command: 'firefox',
+        args: '--new-window https://obsproject.com',
+        workingDirectory: ''
+      },
+      assignedAt: new Date().toISOString()
+    },
+    'button:7': {
+      actionId: 'com.linuxstreamdeck.obs:start-stream',
+      config: {},
+      assignedAt: new Date().toISOString()
+    },
+    'button:8': {
+      actionId: 'com.linuxstreamdeck.obs:start-record',
       config: {},
       assignedAt: new Date().toISOString()
     },
     'button:11': {
-      actionId: 'com.linuxstreamdeck.core:sleep',
+      actionId: 'com.linuxstreamdeck.core:run-command',
+      config: {
+        commandLine: 'echo OpenDeck Alpha',
+        workingDirectory: '',
+        timeoutMs: 15000
+      },
+      assignedAt: new Date().toISOString()
+    },
+    'button:12': {
+      actionId: 'com.linuxstreamdeck.obs:studio-transition',
       config: {},
       assignedAt: new Date().toISOString()
     }
@@ -1176,7 +1526,75 @@ function createFallbackBootstrapState() {
       connecting: false,
       obsWebSocketVersion: null,
       currentProgramSceneName: null,
-      scenes: [],
+      scenes: [
+        {
+          sceneIndex: 0,
+          sceneName: 'Starting Soon',
+          sceneUuid: 'preview-scene-starting-soon'
+        },
+        {
+          sceneIndex: 1,
+          sceneName: 'Gameplay',
+          sceneUuid: 'preview-scene-gameplay'
+        },
+        {
+          sceneIndex: 2,
+          sceneName: 'BRB',
+          sceneUuid: 'preview-scene-brb'
+        }
+      ],
+      inputs: [
+        {
+          inputName: 'Microphone',
+          inputKind: 'wasapi_input_capture',
+          inputUuid: 'preview-input-microphone',
+          unversionedInputKind: 'wasapi_input_capture',
+          inputMuted: false
+        },
+        {
+          inputName: 'Desktop Audio',
+          inputKind: 'wasapi_output_capture',
+          inputUuid: 'preview-input-desktop',
+          unversionedInputKind: 'wasapi_output_capture',
+          inputMuted: false
+        }
+      ],
+      sceneItemsBySceneName: {
+        'Gameplay': [
+          {
+            sceneItemId: 1,
+            sceneItemIndex: 0,
+            sourceName: 'Gameplay Camera',
+            sceneItemEnabled: true,
+            isGroup: false
+          },
+          {
+            sceneItemId: 2,
+            sceneItemIndex: 1,
+            sourceName: 'Chat Overlay',
+            sceneItemEnabled: true,
+            isGroup: false
+          }
+        ],
+        'Starting Soon': [
+          {
+            sceneItemId: 3,
+            sceneItemIndex: 0,
+            sourceName: 'Countdown',
+            sceneItemEnabled: true,
+            isGroup: false
+          }
+        ]
+      },
+      stream: {
+        active: false,
+        reconnecting: false
+      },
+      record: {
+        active: false,
+        paused: false
+      },
+      studioModeEnabled: false,
       lastError: null,
       setupHint: 'Connect the desktop bridge to populate OBS scenes and live status.'
     },

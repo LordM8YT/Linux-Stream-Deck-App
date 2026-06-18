@@ -4,6 +4,7 @@ const { ObsService } = require('../services/obs/ObsService');
 const { PluginImportService } = require('../services/plugins/PluginImportService');
 const { PluginManager } = require('../services/plugins/PluginManager');
 const { AppStateStore } = require('../services/storage/AppStateStore');
+const { SystemActionService } = require('../services/system/SystemActionService');
 const { StreamDeckService } = require('../services/streamDeck/StreamDeckService');
 
 class AppRuntime {
@@ -21,6 +22,7 @@ class AppRuntime {
     this.obsService = new ObsService({
       store: this.store
     });
+    this.systemActionService = new SystemActionService();
     this.pluginManager = new PluginManager({
       pluginRoots: [
         this.bundledPluginsDir,
@@ -28,7 +30,8 @@ class AppRuntime {
       ],
       getExecutionContext: () => ({
         services: {
-          obs: this.obsService
+          obs: this.obsService,
+          system: this.systemActionService
         }
       })
     });

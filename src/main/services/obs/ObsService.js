@@ -11,6 +11,17 @@ class ObsService {
       obsWebSocketVersion: null,
       currentProgramSceneName: null,
       scenes: [],
+      inputs: [],
+      sceneItemsBySceneName: {},
+      stream: {
+        active: false,
+        reconnecting: false
+      },
+      record: {
+        active: false,
+        paused: false
+      },
+      studioModeEnabled: false,
       lastError: null,
       setupHint: null
     };
@@ -113,11 +124,7 @@ class ObsService {
     }
 
     this.client = null;
-    this.state.connected = false;
-    this.state.connecting = false;
-    this.state.obsWebSocketVersion = null;
-    this.state.currentProgramSceneName = null;
-    this.state.scenes = [];
+    this.resetRuntimeState();
     this.state.lastError = null;
     this.state.setupHint = null;
     return this.getState();
@@ -129,13 +136,16 @@ class ObsService {
     }
 
     try {
-      const response = await this.client.call('GetSceneList');
-      this.state.scenes = (response.scenes || []).map((scene) => ({
+      const sceneResponse = await this.client.call('GetSceneList');
+      this.state.scenes = (sceneResponse.scenes || []).map((scene) => ({
         sceneIndex: scene.sceneIndex,
         sceneName: scene.sceneName,
         sceneUuid: scene.sceneUuid
       }));
-      this.state.currentProgramSceneName = response.currentProgramSceneName || null;
+      this.state.currentProgramSceneName = sceneResponse.currentProgramSceneName || null;
+      this.state.inputs = await this.fetchInputs();
+      this.state.sceneItemsBySceneName = await this.fetchSceneItemsByScene();
+      await this.refreshOutputStates();
       this.state.lastError = null;
       this.state.setupHint = null;
     } catch (error) {
@@ -165,6 +175,264 @@ class ObsService {
     return this.getState();
   }
 
+  async setInputMute(inputName, inputMuted) {
+    if (!this.client || !this.state.connected) {
+      throw new Error('OBS is not connected.');
+    }
+
+    if (!inputName) {
+      throw new Error('An OBS input name is required.');
+    }
+
+    await this.client.call('SetInputMute', {
+      inputName,
+      inputMuted
+    });
+
+    const inputRecord = this.state.inputs.find((input) => input.inputName === inputName);
+
+    if (inputRecord) {
+      inputRecord.inputMuted = inputMuted;
+    }
+
+    return {
+      ...this.getState(),
+      lastMutation: {
+        inputName,
+        inputMuted
+      }
+    };
+  }
+
+  async toggleInputMute(inputName) {
+    if (!this.client || !this.state.connected) {
+      throw new Error('OBS is not connected.');
+    }
+
+    if (!inputName) {
+      throw new Error('An OBS input name is required.');
+    }
+
+    const response = await this.client.call('ToggleInputMute', {
+      inputName
+    });
+
+    const inputRecord = this.state.inputs.find((input) => input.inputName === inputName);
+
+    if (inputRecord && typeof response.inputMuted === 'boolean') {
+      inputRecord.inputMuted = response.inputMuted;
+    }
+
+    return response;
+  }
+
+  async startStream() {
+    await this.ensureOutputState('stream', true);
+    return this.getState();
+  }
+
+  async stopStream() {
+    await this.ensureOutputState('stream', false);
+    return this.getState();
+  }
+
+  async startRecord() {
+    await this.ensureOutputState('record', true);
+    return this.getState();
+  }
+
+  async stopRecord() {
+    await this.ensureOutputState('record', false);
+    return this.getState();
+  }
+
+  async setStudioModeEnabled(studioModeEnabled) {
+    if (!this.client || !this.state.connected) {
+      throw new Error('OBS is not connected.');
+    }
+
+    await this.client.call('SetStudioModeEnabled', {
+      studioModeEnabled
+    });
+
+    this.state.studioModeEnabled = studioModeEnabled;
+    return this.getState();
+  }
+
+  async triggerStudioModeTransition() {
+    if (!this.client || !this.state.connected) {
+      throw new Error('OBS is not connected.');
+    }
+
+    await this.client.call('TriggerStudioModeTransition');
+    return this.getState();
+  }
+
+  async toggleSceneItemEnabled(sceneName, sceneItemId) {
+    if (!this.client || !this.state.connected) {
+      throw new Error('OBS is not connected.');
+    }
+
+    if (!sceneName) {
+      throw new Error('A scene name is required.');
+    }
+
+    if (typeof sceneItemId !== 'number' || Number.isNaN(sceneItemId)) {
+      throw new Error('A valid scene item is required.');
+    }
+
+    const currentState = await this.client.call('GetSceneItemEnabled', {
+      sceneName,
+      sceneItemId
+    });
+    const nextEnabledState = !currentState.sceneItemEnabled;
+    const result = await this.client.call('SetSceneItemEnabled', {
+      sceneName,
+      sceneItemId,
+      sceneItemEnabled: nextEnabledState
+    });
+
+    const sceneItems = this.state.sceneItemsBySceneName[sceneName];
+    const sceneItem = sceneItems?.find((candidate) => candidate.sceneItemId === sceneItemId);
+
+    if (sceneItem) {
+      sceneItem.sceneItemEnabled = result.sceneItemEnabled;
+    }
+
+    return {
+      sceneName,
+      sceneItemId,
+      sceneItemEnabled: result.sceneItemEnabled
+    };
+  }
+
+  async ensureOutputState(outputType, shouldBeActive) {
+    if (!this.client || !this.state.connected) {
+      throw new Error('OBS is not connected.');
+    }
+
+    await this.refreshOutputStates();
+
+    if (outputType === 'stream') {
+      if (this.state.stream.active === shouldBeActive) {
+        return;
+      }
+
+      await this.client.call(shouldBeActive ? 'StartStream' : 'StopStream');
+    } else {
+      if (this.state.record.active === shouldBeActive) {
+        return;
+      }
+
+      await this.client.call(shouldBeActive ? 'StartRecord' : 'StopRecord');
+    }
+
+    await this.refreshOutputStates();
+  }
+
+  async refreshOutputStates() {
+    if (!this.client || !this.state.connected) {
+      return;
+    }
+
+    const [streamStatus, recordStatus, studioModeStatus] = await Promise.all([
+      this.client.call('GetStreamStatus'),
+      this.client.call('GetRecordStatus'),
+      this.client.call('GetStudioModeEnabled')
+    ]);
+
+    this.state.stream = {
+      active: Boolean(streamStatus.outputActive),
+      reconnecting: Boolean(streamStatus.outputReconnecting)
+    };
+    this.state.record = {
+      active: Boolean(recordStatus.outputActive),
+      paused: Boolean(recordStatus.outputPaused)
+    };
+    this.state.studioModeEnabled = Boolean(studioModeStatus.studioModeEnabled);
+  }
+
+  async fetchInputs() {
+    const response = await this.client.call('GetInputList');
+    const inputs = [];
+
+    for (const input of response.inputs || []) {
+      let inputMuted = false;
+
+      try {
+        const muteState = await this.client.call('GetInputMute', {
+          inputName: input.inputName
+        });
+        inputMuted = Boolean(muteState.inputMuted);
+      } catch (_error) {
+        inputMuted = false;
+      }
+
+      inputs.push({
+        inputName: input.inputName,
+        inputKind: input.inputKind,
+        inputUuid: input.inputUuid,
+        unversionedInputKind: input.unversionedInputKind || null,
+        inputMuted
+      });
+    }
+
+    return inputs;
+  }
+
+  async fetchSceneItemsByScene() {
+    const sceneItemsBySceneName = {};
+
+    for (const scene of this.state.scenes) {
+      const response = await this.client.call('GetSceneItemList', {
+        sceneName: scene.sceneName
+      });
+
+      sceneItemsBySceneName[scene.sceneName] = (response.sceneItems || []).map((sceneItem) => ({
+        sceneItemId: sceneItem.sceneItemId,
+        sceneItemIndex: sceneItem.sceneItemIndex,
+        sourceName: sceneItem.sourceName,
+        sceneItemEnabled: sceneItem.sceneItemEnabled,
+        isGroup: Boolean(sceneItem.isGroup)
+      }));
+    }
+
+    return sceneItemsBySceneName;
+  }
+
+  resetRuntimeState() {
+    this.state.connected = false;
+    this.state.connecting = false;
+    this.state.obsWebSocketVersion = null;
+    this.state.currentProgramSceneName = null;
+    this.state.scenes = [];
+    this.state.inputs = [];
+    this.state.sceneItemsBySceneName = {};
+    this.state.stream = {
+      active: false,
+      reconnecting: false
+    };
+    this.state.record = {
+      active: false,
+      paused: false
+    };
+    this.state.studioModeEnabled = false;
+  }
+
+  refreshScenesFromEvent() {
+    void this.refreshScenes().catch((error) => {
+      this.state.lastError = error.message;
+      this.state.setupHint = buildSetupHint(error);
+    });
+  }
+
+  refreshOutputStatesFromEvent() {
+    void this.refreshOutputStates().catch((error) => {
+      this.state.lastError = error.message;
+      this.state.setupHint = buildSetupHint(error);
+    });
+  }
+
   attachClientHandlers() {
     if (!this.client) {
       return;
@@ -172,10 +440,7 @@ class ObsService {
 
     this.boundHandlers = {
       connectionClosed: (error) => {
-        this.state.connected = false;
-        this.state.connecting = false;
-        this.state.currentProgramSceneName = null;
-        this.state.scenes = [];
+        this.resetRuntimeState();
         this.state.lastError = error?.message || 'OBS connection closed.';
         this.state.setupHint = buildSetupHint(error);
       },
@@ -187,10 +452,43 @@ class ObsService {
         this.state.currentProgramSceneName = sceneName;
       },
       sceneListChanged: () => {
-        void this.refreshScenes().catch((error) => {
-          this.state.lastError = error.message;
-          this.state.setupHint = buildSetupHint(error);
-        });
+        this.refreshScenesFromEvent();
+      },
+      inputCreated: () => {
+        this.refreshScenesFromEvent();
+      },
+      inputRemoved: () => {
+        this.refreshScenesFromEvent();
+      },
+      sceneItemCreated: () => {
+        this.refreshScenesFromEvent();
+      },
+      sceneItemRemoved: () => {
+        this.refreshScenesFromEvent();
+      },
+      inputMuteStateChanged: ({ inputName, inputMuted }) => {
+        const inputRecord = this.state.inputs.find((input) => input.inputName === inputName);
+
+        if (inputRecord) {
+          inputRecord.inputMuted = Boolean(inputMuted);
+        }
+      },
+      sceneItemEnableStateChanged: ({ sceneName, sceneItemId, sceneItemEnabled }) => {
+        const sceneItems = this.state.sceneItemsBySceneName[sceneName];
+        const sceneItem = sceneItems?.find((candidate) => candidate.sceneItemId === sceneItemId);
+
+        if (sceneItem) {
+          sceneItem.sceneItemEnabled = Boolean(sceneItemEnabled);
+        }
+      },
+      streamStateChanged: () => {
+        this.refreshOutputStatesFromEvent();
+      },
+      recordStateChanged: () => {
+        this.refreshOutputStatesFromEvent();
+      },
+      studioModeStateChanged: ({ studioModeEnabled }) => {
+        this.state.studioModeEnabled = Boolean(studioModeEnabled);
       }
     };
 
@@ -198,6 +496,15 @@ class ObsService {
     this.client.on('ConnectionError', this.boundHandlers.connectionError);
     this.client.on('CurrentProgramSceneChanged', this.boundHandlers.currentProgramSceneChanged);
     this.client.on('SceneListChanged', this.boundHandlers.sceneListChanged);
+    this.client.on('InputCreated', this.boundHandlers.inputCreated);
+    this.client.on('InputRemoved', this.boundHandlers.inputRemoved);
+    this.client.on('SceneItemCreated', this.boundHandlers.sceneItemCreated);
+    this.client.on('SceneItemRemoved', this.boundHandlers.sceneItemRemoved);
+    this.client.on('InputMuteStateChanged', this.boundHandlers.inputMuteStateChanged);
+    this.client.on('SceneItemEnableStateChanged', this.boundHandlers.sceneItemEnableStateChanged);
+    this.client.on('StreamStateChanged', this.boundHandlers.streamStateChanged);
+    this.client.on('RecordStateChanged', this.boundHandlers.recordStateChanged);
+    this.client.on('StudioModeStateChanged', this.boundHandlers.studioModeStateChanged);
   }
 
   detachClientHandlers() {
@@ -209,6 +516,15 @@ class ObsService {
     this.client.off('ConnectionError', this.boundHandlers.connectionError);
     this.client.off('CurrentProgramSceneChanged', this.boundHandlers.currentProgramSceneChanged);
     this.client.off('SceneListChanged', this.boundHandlers.sceneListChanged);
+    this.client.off('InputCreated', this.boundHandlers.inputCreated);
+    this.client.off('InputRemoved', this.boundHandlers.inputRemoved);
+    this.client.off('SceneItemCreated', this.boundHandlers.sceneItemCreated);
+    this.client.off('SceneItemRemoved', this.boundHandlers.sceneItemRemoved);
+    this.client.off('InputMuteStateChanged', this.boundHandlers.inputMuteStateChanged);
+    this.client.off('SceneItemEnableStateChanged', this.boundHandlers.sceneItemEnableStateChanged);
+    this.client.off('StreamStateChanged', this.boundHandlers.streamStateChanged);
+    this.client.off('RecordStateChanged', this.boundHandlers.recordStateChanged);
+    this.client.off('StudioModeStateChanged', this.boundHandlers.studioModeStateChanged);
     this.boundHandlers = null;
   }
 }

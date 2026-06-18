@@ -5,7 +5,7 @@ OpenDeck is a Linux-first, open-source alternative to the Elgato Stream Deck app
 - a polished desktop UI that feels intentionally designed, not purely utilitarian
 - a plugin system that is simple enough for independent developers to understand in minutes
 
-The repo now contains the first alpha foundation for an Electron-based desktop app, including early live-control support for OBS Studio scene switching and a Fedora-friendly Linux packaging path.
+The repo now contains the first alpha foundation for an Electron-based desktop app, including built-in core actions, live OBS Studio control, and a Fedora-friendly Linux packaging path.
 
 ## Why Electron First
 
@@ -29,8 +29,10 @@ This foundation keeps the entire app in JavaScript while leaving room to revisit
   - Electron Builder icon assets and Linux RPM post-install scripts.
 - `plugins/com.linuxstreamdeck.demo.hello/`
   - Example plugin showing the minimum viable developer experience.
+- `plugins/com.linuxstreamdeck.core/`
+  - Built-in system actions for opening URLs, launching apps, and running commands.
 - `plugins/com.linuxstreamdeck.obs/`
-  - Built-in OBS Studio action for switching scenes from assigned keys.
+  - Built-in OBS Studio actions for scenes, audio, streaming, recording, and studio mode.
 - `docs/architecture.md`
   - Structural overview and next-step recommendations.
 - `CONTRIBUTING.md`
@@ -70,7 +72,23 @@ As of June 17, 2026, the AppImage build has been verified from WSL2 Ubuntu. The 
 
 Detailed Fedora notes live in `docs/fedora-alpha.md`.
 
-## OBS Scene Switching
+## Built-In Alpha Actions
+
+The current alpha now includes two built-in action tracks:
+
+- `Core Actions`
+  - open a URL or custom protocol
+  - launch an app or executable path
+  - run a shell command with a timeout
+- `OBS Studio`
+  - switch scenes
+  - mute or unmute inputs
+  - start or stop streaming
+  - start or stop recording
+  - toggle source visibility
+  - control studio mode transitions
+
+## OBS Live Control
 
 The current alpha includes a first live-useful OBS path:
 
@@ -81,6 +99,10 @@ The current alpha includes a first live-useful OBS path:
 - trigger the action either from the UI or by pressing the physical Stream Deck key
 
 OBS Studio ships with obs-websocket built in on OBS 28.0.0 and later.
+
+## GitHub Releases
+
+The workflow at `.github/workflows/alpha-release.yml` now builds Linux and Windows alpha artifacts on version tags like `v0.1.0-alpha.2`, uploads them to Actions, and can publish them to a GitHub pre-release.
 
 ## Plugin Contract
 

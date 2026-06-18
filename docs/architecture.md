@@ -48,6 +48,7 @@ Files:
 - `electron/main.js`
 - `src/main/runtime/AppRuntime.js`
 - `src/main/ipc/registerHandlers.js`
+- `src/main/services/system/SystemActionService.js`
 
 Responsibilities:
 
@@ -101,6 +102,14 @@ Responsibilities:
 - leave room for marketplace-feed resolvers that eventually point to plugin sources
 - expose a catalog back to the renderer
 
+### System Action Service
+
+Responsibilities:
+
+- open URLs and custom protocol targets safely through Electron
+- launch apps or executable paths for built-in core actions
+- run shell commands with timeouts for alpha automation use cases
+
 ## Data Flow
 
 1. Electron starts `AppRuntime`.
@@ -128,11 +137,11 @@ That gives us a low-friction base before we add richer concepts like settings UI
 
 ## Recommended Next Steps
 
-1. Persist layouts and plugin settings to disk instead of memory only.
-2. Add a dedicated action execution context with logging, notifications, and shell command helpers.
-3. Move plugin execution into isolated workers or utility processes for safety.
-4. Add icon import, text editing, and multi-state key previews.
-5. Support multiple connected Stream Decks with per-device profiles.
-6. Add first-run diagnostics and a friendlier in-app Linux setup helper.
+1. Add multi-page layouts, folders, and profile switching so navigation works like a real Stream Deck app.
+2. Move plugin execution into isolated workers or utility processes for safety.
+3. Add icon import, text editing, and multi-state key previews.
+4. Support multiple connected Stream Decks with per-device profiles.
+5. Add first-run diagnostics and a friendlier in-app Linux setup helper.
+6. Expand the built-in action set with audio, app focus, and richer OBS state-aware controls.
 
 The repo already includes Linux distro guidance in `docs/linux-compatibility.md`, Fedora alpha packaging notes in `docs/fedora-alpha.md`, portable `udev` rule files under `linux/udev/`, and an Electron Builder workflow for Linux alpha artifacts.

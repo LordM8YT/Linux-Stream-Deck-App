@@ -1,0 +1,29 @@
+{
+  "id": "com.linuxstreamdeck.core",
+  "name": "Core Actions",
+  "version": "0.1.0",
+  "description": "Built-in OpenDeck actions for URLs, app launching, and shell commands.",
+  "actions": [
+    {
+      "id": "open-url",
+      "name": "Open URL",
+      "description": "Open a website or custom protocol target from a Stream Deck key.",
+      "defaultLabel": "URL",
+      "accentColor": "#66a7ff"
+    },
+    {
+      "id": "launch-app",
+      "name": "Launch App",
+      "description": "Launch an installed application or executable path in the background.",
+      "defaultLabel": "APP",
+      "accentColor": "#73d39d"
+    },
+    {
+      "id": "run-command",
+      "name": "Run Command",
+      "description": "Run a shell command directly from a key and wait for it to finish.",
+      "defaultLabel": "CMD",
+      "accentColor": "#f0b563"
+    }
+  ]
+}

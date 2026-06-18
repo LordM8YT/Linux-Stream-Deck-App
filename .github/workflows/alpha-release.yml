@@ -1,0 +1,105 @@
+name: Alpha Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-alpha:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libudev-dev libusb-1.0-0-dev fakeroot
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh Electron native app dependencies
+        run: npm run install:app-deps
+
+      - name: Verify syntax
+        run: npm run check
+
+      - name: Build Linux alpha artifacts
+        run: npm run dist:linux:fedora
+
+      - name: Upload Linux alpha artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendeck-linux-alpha
+          path: |
+            dist/*.AppImage
+            dist/*.rpm
+            dist/latest-linux.yml
+
+  build-windows-alpha:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh Electron native app dependencies
+        run: npm run install:app-deps
+
+      - name: Verify syntax
+        run: npm run check
+
+      - name: Build Windows alpha artifact
+        run: npm run dist:win
+
+      - name: Upload Windows alpha artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendeck-windows-alpha
+          path: |
+            dist/*.exe
+
+  publish-github-prerelease:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-linux-alpha
+      - build-windows-alpha
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Publish GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.rpm
+            release-artifacts/**/*.exe

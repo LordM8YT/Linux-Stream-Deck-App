@@ -110,59 +110,61 @@
             </div>
           </section>
 
-          <section class="rail-panel" id="keys-panel">
-            <div class="rail-panel__heading">
-              <div>
-                <p class="rail-kicker">Keys</p>
-                <h2>Action Browser</h2>
+          <div class="right-rail__content">
+            <section class="rail-panel rail-panel--library" id="keys-panel">
+              <div class="rail-panel__heading">
+                <div>
+                  <p class="rail-kicker">Keys</p>
+                  <h2>Action Browser</h2>
+                </div>
+                <span class="rail-badge" id="plugin-count">0 actions</span>
               </div>
-              <span class="rail-badge" id="plugin-count">0 actions</span>
-            </div>
 
-            <div class="plugin-list" id="plugin-list"></div>
-          </section>
+              <div class="plugin-list" id="plugin-list"></div>
+            </section>
 
-          <section class="rail-panel u-hidden" id="plugins-panel">
-            <div class="rail-panel__heading">
-              <div>
-                <p class="rail-kicker">Installed Plugins</p>
-                <h2>Plugin Folders</h2>
+            <section class="rail-panel rail-panel--library u-hidden" id="plugins-panel">
+              <div class="rail-panel__heading">
+                <div>
+                  <p class="rail-kicker">Installed Plugins</p>
+                  <h2>Plugin Folders</h2>
+                </div>
               </div>
-            </div>
 
-            <div class="plugin-import-card">
-              <div class="plugin-import-card__copy">
-                <p class="rail-kicker">Import Plugin</p>
-                <h3>Install from URL</h3>
-                <p>
-                  Paste a GitHub repository or plugin-folder link now. Marketplace JSON feeds can also work later by using a
-                  URL like `marketplace.json#plugin-id`.
+              <div class="plugin-import-card">
+                <div class="plugin-import-card__copy">
+                  <p class="rail-kicker">Import Plugin</p>
+                  <h3>Install from URL</h3>
+                  <p>
+                    Paste a GitHub repository or plugin-folder link now. Marketplace JSON feeds can also work later by using a
+                    URL like `marketplace.json#plugin-id`.
+                  </p>
+                </div>
+
+                <label class="field-group">
+                  <span>Plugin URL</span>
+                  <input
+                    id="plugin-import-input"
+                    type="url"
+                    placeholder="https://github.com/owner/repo/tree/main/plugin-folder"
+                  />
+                </label>
+
+                <div class="button-row">
+                  <button class="control-button" id="plugin-import-button" type="button">Import Plugin</button>
+                  <button class="control-button control-button--secondary" id="plugin-preview-button" type="button">
+                    Preview Source
+                  </button>
+                </div>
+
+                <p class="obs-meta-text" id="plugin-import-meta-text">
+                  Imported plugins are installed into your writable user plugin folder.
                 </p>
               </div>
 
-              <label class="field-group">
-                <span>Plugin URL</span>
-                <input
-                  id="plugin-import-input"
-                  type="url"
-                  placeholder="https://github.com/owner/repo/tree/main/plugin-folder"
-                />
-              </label>
-
-              <div class="button-row">
-                <button class="control-button" id="plugin-import-button" type="button">Import Plugin</button>
-                <button class="control-button control-button--secondary" id="plugin-preview-button" type="button">
-                  Preview Source
-                </button>
-              </div>
-
-              <p class="obs-meta-text" id="plugin-import-meta-text">
-                Imported plugins are installed into your writable user plugin folder.
-              </p>
-            </div>
-
-            <div class="plugin-directory-list" id="plugin-directory-list"></div>
-          </section>
+              <div class="plugin-directory-list" id="plugin-directory-list"></div>
+            </section>
+          </div>
 
           <section class="rail-panel rail-panel--obs">
             <div class="rail-panel__heading">

@@ -2,7 +2,7 @@
   "id": "com.linuxstreamdeck.obs",
   "name": "OBS Studio",
   "version": "0.1.0",
-  "description": "Built-in OBS Studio actions for live scene switching over obs-websocket.",
+  "description": "Built-in OBS Studio actions for scenes, audio, streaming, recording, and studio mode over obs-websocket.",
   "actions": [
     {
       "id": "scene-switch",
@@ -10,6 +10,83 @@
       "description": "Switch OBS to the configured scene.",
       "defaultLabel": "SCENE",
       "accentColor": "#ff5d73"
+    },
+    {
+      "id": "mute-input",
+      "name": "Mute Input",
+      "description": "Mute the selected OBS input.",
+      "defaultLabel": "MUTE",
+      "accentColor": "#ff9f45"
+    },
+    {
+      "id": "unmute-input",
+      "name": "Unmute Input",
+      "description": "Unmute the selected OBS input.",
+      "defaultLabel": "UNMUTE",
+      "accentColor": "#ffbf66"
+    },
+    {
+      "id": "toggle-input-mute",
+      "name": "Toggle Input Mute",
+      "description": "Toggle mute for the selected OBS input.",
+      "defaultLabel": "AUDIO",
+      "accentColor": "#ffb366"
+    },
+    {
+      "id": "start-stream",
+      "name": "Start Streaming",
+      "description": "Start the OBS stream output.",
+      "defaultLabel": "STREAM",
+      "accentColor": "#ff6f7f"
+    },
+    {
+      "id": "stop-stream",
+      "name": "Stop Streaming",
+      "description": "Stop the OBS stream output.",
+      "defaultLabel": "STOP",
+      "accentColor": "#e05666"
+    },
+    {
+      "id": "start-record",
+      "name": "Start Recording",
+      "description": "Start the OBS recording output.",
+      "defaultLabel": "REC",
+      "accentColor": "#ff4f68"
+    },
+    {
+      "id": "stop-record",
+      "name": "Stop Recording",
+      "description": "Stop the OBS recording output.",
+      "defaultLabel": "STOP REC",
+      "accentColor": "#c84558"
+    },
+    {
+      "id": "enable-studio-mode",
+      "name": "Enable Studio Mode",
+      "description": "Turn OBS studio mode on.",
+      "defaultLabel": "STUDIO",
+      "accentColor": "#6a8dff"
+    },
+    {
+      "id": "disable-studio-mode",
+      "name": "Disable Studio Mode",
+      "description": "Turn OBS studio mode off.",
+      "defaultLabel": "LIVE",
+      "accentColor": "#5e80ec"
+    },
+    {
+      "id": "studio-transition",
+      "name": "Trigger Studio Transition",
+      "description": "Trigger the active studio mode transition.",
+      "defaultLabel": "CUT",
+      "accentColor": "#79a6ff"
+    },
+    {
+      "id": "toggle-source-visibility",
+      "name": "Toggle Source Visibility",
+      "description": "Toggle the visibility of a source inside a selected scene.",
+      "defaultLabel": "SOURCE",
+      "accentColor": "#8f6dff"
     }
   ]
 }

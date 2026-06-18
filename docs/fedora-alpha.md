@@ -41,7 +41,7 @@ npm run install:app-deps
 ## Install on Fedora
 
 ```bash
-sudo dnf install ./dist/OpenDeck-0.1.0-alpha.1-linux-x86_64.rpm
+sudo dnf install ./dist/OpenDeck-0.1.0-alpha.2-linux-x86_64.rpm
 ```
 
 The RPM post-install script attempts to install an `udev` access rule automatically and reload the rules.
@@ -55,14 +55,14 @@ If the Stream Deck still does not appear:
 ## AppImage fallback
 
 ```bash
-chmod +x ./dist/OpenDeck-0.1.0-alpha.1-linux-x86_64.AppImage
-./dist/OpenDeck-0.1.0-alpha.1-linux-x86_64.AppImage
+chmod +x ./dist/OpenDeck-0.1.0-alpha.2-linux-x86_64.AppImage
+./dist/OpenDeck-0.1.0-alpha.2-linux-x86_64.AppImage
 ```
 
 The AppImage is great for quick streaming tests, but it does not install `udev` rules system-wide by itself. If hardware access fails, use the rules in `linux/udev/`.
 
 ## GitHub Actions build
 
-The workflow `.github/workflows/linux-alpha.yml` builds the Fedora alpha artifacts on GitHub Actions and uploads them as downloadable build artifacts.
+The workflow `.github/workflows/alpha-release.yml` builds the Fedora alpha artifacts plus a Windows portable build on GitHub Actions, uploads them as downloadable build artifacts, and can publish them to a GitHub pre-release when you push a version tag.
 
 That means you do not need a Fedora machine locally just to produce the first testable alpha package.

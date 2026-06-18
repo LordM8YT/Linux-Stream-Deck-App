@@ -245,7 +245,8 @@ function normalizeConfigFields(configFields) {
     defaultValue: field.defaultValue,
     placeholder: field.placeholder || '',
     optionsSource: field.optionsSource || null,
-    options: Array.isArray(field.options) ? field.options : []
+    options: Array.isArray(field.options) ? field.options : [],
+    resetOnChange: Array.isArray(field.resetOnChange) ? field.resetOnChange : []
   }));
 }
 
