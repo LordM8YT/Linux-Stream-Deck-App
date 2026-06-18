@@ -102,7 +102,7 @@ OBS Studio ships with obs-websocket built in on OBS 28.0.0 and later.
 
 ## GitHub Releases
 
-The workflow at `.github/workflows/alpha-release.yml` now builds Linux and Windows alpha artifacts on version tags like `v0.1.0-alpha.2`, uploads them to Actions, and can publish them to a GitHub pre-release.
+The workflow at `.github/workflows/alpha-release.yml` now builds Linux and Windows alpha artifacts on version tags like `v0.1.0-alpha.3`, uploads them to Actions, and can publish them to a GitHub pre-release.
 
 ## Plugin Contract
 

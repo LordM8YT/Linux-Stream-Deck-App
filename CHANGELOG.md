@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.3
+
+- Fixed the GitHub Linux release workflow by removing the failing Ubuntu `install:app-deps` step before packaging.
+- Kept the Windows portable build path unchanged for the cross-platform alpha release.
+
 ## 0.1.0-alpha.2
 
 - Added a real built-in `Core Actions` plugin with `Open URL`, `Launch App`, and `Run Command`.

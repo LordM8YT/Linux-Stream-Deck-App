@@ -31,9 +31,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Refresh Electron native app dependencies
-        run: npm run install:app-deps
-
       - name: Verify syntax
         run: npm run check
 
