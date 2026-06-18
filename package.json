@@ -1,6 +1,6 @@
 {
   "name": "linux-stream-deck-app",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Linux-first open source Stream Deck desktop app alpha with a simple plugin API.",
   "homepage": "https://github.com/LordM8YT/Linux-Stream-Deck-App",
   "repository": {

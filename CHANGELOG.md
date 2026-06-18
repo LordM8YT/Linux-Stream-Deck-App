@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+- Switched the GitHub tag release flow to Linux-only so we can unblock the Linux alpha without rerunning Windows packaging.
+- Kept Electron Builder packaging on `--publish never` so GitHub releases are handled only by the explicit release step.
+
 ## 0.1.0-alpha.3
 
 - Fixed the GitHub Linux release workflow by removing the failing Ubuntu `install:app-deps` step before packaging.
