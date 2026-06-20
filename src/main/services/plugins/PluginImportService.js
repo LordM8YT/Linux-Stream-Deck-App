@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const unzipper = require('unzipper');
 const { validateManifest } = require('./PluginManager');
 
 class PluginImportService {
@@ -36,7 +37,7 @@ class PluginImportService {
     const existingPlugin = this.pluginManager.getPlugin(resolved.manifest.id);
 
     if (existingPlugin && !isPathInside(existingPlugin.root, this.userPluginsRoot)) {
-      throw new Error(`Plugin "${resolved.manifest.id}" is already bundled with Decksmith. Rename the plugin id or import a different plugin.`);
+      throw new Error(`Plugin "${resolved.manifest.id}" is already bundled with DeckSmith. Rename the plugin id or import a different plugin.`);
     }
 
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'decksmith-plugin-'));
@@ -84,6 +85,10 @@ async function resolvePluginSource(sourceUrl, fetchImpl) {
   const normalizedSourceUrl = normalizeSourceUrl(sourceUrl);
   const url = new URL(normalizedSourceUrl);
 
+  if (looksLikeZipUrl(url)) {
+    return resolveZipPluginSource(url, fetchImpl);
+  }
+
   if (url.hostname === 'github.com') {
     return resolveGitHubPluginSource(url, fetchImpl);
   }
@@ -119,7 +124,57 @@ async function resolveJsonPluginSource(url, fetchImpl) {
     return resolvePluginSource(selectedPlugin.source.url, fetchImpl);
   }
 
-  throw new Error('Unsupported plugin source. Paste a GitHub repository or plugin-folder URL, or an Decksmith marketplace JSON URL.');
+  throw new Error('Unsupported plugin source. Paste a GitHub repository URL, a direct plugin zip, or a DeckSmith marketplace JSON URL.');
+}
+
+async function resolveZipPluginSource(url, fetchImpl) {
+  const archiveBuffer = await fetchBinary(url.toString(), fetchImpl);
+  const directory = await unzipper.Open.buffer(archiveBuffer);
+  const pluginRoot = detectZipPluginRoot(directory.files);
+  const files = new Map();
+
+  for (const entry of directory.files) {
+    if (entry.type !== 'File') {
+      continue;
+    }
+
+    const normalizedPath = normalizeZipPath(entry.path);
+
+    if (!normalizedPath || normalizedPath.startsWith('__MACOSX/')) {
+      continue;
+    }
+
+    if (!normalizedPath.startsWith(pluginRoot)) {
+      continue;
+    }
+
+    const relativePath = normalizeRelativeZipPath(pluginRoot, normalizedPath);
+
+    if (!relativePath) {
+      continue;
+    }
+
+    files.set(relativePath, await entry.buffer());
+  }
+
+  const manifestBuffer = files.get('manifest.json');
+  const entryBuffer = files.get('index.js');
+
+  if (!manifestBuffer || !entryBuffer) {
+    throw new Error('The plugin zip must contain manifest.json and index.js inside the same plugin folder.');
+  }
+
+  const manifest = JSON.parse(manifestBuffer.toString('utf8'));
+  validateManifest(manifest);
+
+  return {
+    resolver: 'zip',
+    sourceUrl: url.toString(),
+    resolvedSourceUrl: url.toString(),
+    reference: url.toString(),
+    manifest,
+    files
+  };
 }
 
 async function resolveGitHubPluginSource(url, fetchImpl) {
@@ -204,7 +259,7 @@ async function parseGitHubPluginLocation(url, fetchImpl) {
     };
   }
 
-  throw new Error('Decksmith could not resolve that GitHub URL. Paste a repository URL or a direct plugin folder URL.');
+  throw new Error('DeckSmith could not resolve that GitHub URL. Paste a repository URL or a direct plugin folder URL.');
 }
 
 function normalizeGitHubPluginPath(candidatePath, contents) {
@@ -223,6 +278,51 @@ function normalizeGitHubPluginPath(candidatePath, contents) {
   }
 
   throw new Error('GitHub URL must point to a plugin folder, manifest.json, or index.js file.');
+}
+
+function detectZipPluginRoot(entries) {
+  const filePaths = entries
+    .filter((entry) => entry.type === 'File')
+    .map((entry) => normalizeZipPath(entry.path))
+    .filter(Boolean);
+  const directories = new Set(['']);
+
+  for (const filePath of filePaths) {
+    const segments = filePath.split('/');
+
+    while (segments.length > 1) {
+      segments.pop();
+      directories.add(segments.join('/'));
+    }
+  }
+
+  const candidates = Array.from(directories)
+    .filter((directoryPath) => {
+      const prefix = directoryPath ? `${directoryPath}/` : '';
+
+      return filePaths.includes(`${prefix}manifest.json`) && filePaths.includes(`${prefix}index.js`);
+    })
+    .sort((left, right) => left.length - right.length);
+
+  if (candidates.length === 0) {
+    throw new Error('DeckSmith could not find a plugin folder inside that zip. The archive needs manifest.json and index.js.');
+  }
+
+  return candidates[0] ? `${candidates[0]}/` : '';
+}
+
+function normalizeZipPath(filePath) {
+  return String(filePath || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+}
+
+function normalizeRelativeZipPath(rootPath, filePath) {
+  const relativePath = rootPath
+    ? filePath.slice(rootPath.length)
+    : filePath;
+
+  return relativePath.replace(/^\/+/, '');
 }
 
 async function detectGitHubPluginRoot(owner, repo, ref, fetchImpl) {
@@ -256,7 +356,7 @@ async function detectGitHubPluginRoot(owner, repo, ref, fetchImpl) {
     throw new Error(`This repository contains multiple plugin folders (${candidateDirectories.join(', ')}). Paste a direct URL to the plugin folder you want to import.`);
   }
 
-  throw new Error('Decksmith could not find a plugin folder in that repository. The folder needs at least manifest.json and index.js.');
+  throw new Error('DeckSmith could not find a plugin folder in that repository. The folder needs at least manifest.json and index.js.');
 }
 
 function directoryLooksLikePlugin(entries) {
@@ -304,7 +404,7 @@ async function fetchGitHubDefaultBranch(owner, repo, fetchImpl) {
   });
 
   if (typeof repository.default_branch !== 'string' || repository.default_branch.trim() === '') {
-    throw new Error('Decksmith could not determine the default branch for that GitHub repository.');
+    throw new Error('DeckSmith could not determine the default branch for that GitHub repository.');
   }
 
   return repository.default_branch;
@@ -323,7 +423,7 @@ async function fetchGitHubContents(owner, repo, ref, contentPath, fetchImpl, { a
   const response = await fetchImpl(endpoint, {
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'Decksmith'
+      'User-Agent': 'DeckSmith'
     }
   });
 
@@ -342,7 +442,7 @@ async function fetchJson(url, fetchImpl, { accept } = {}) {
   const response = await fetchImpl(url, {
     headers: {
       Accept: accept || 'application/json',
-      'User-Agent': 'Decksmith'
+      'User-Agent': 'DeckSmith'
     }
   });
 
@@ -353,10 +453,16 @@ async function fetchJson(url, fetchImpl, { accept } = {}) {
   return response.json();
 }
 
+function looksLikeZipUrl(url) {
+  const pathname = String(url.pathname || '').toLowerCase();
+
+  return pathname.endsWith('.zip');
+}
+
 async function fetchBinary(url, fetchImpl) {
   const response = await fetchImpl(url, {
     headers: {
-      'User-Agent': 'Decksmith'
+      'User-Agent': 'DeckSmith'
     }
   });
 

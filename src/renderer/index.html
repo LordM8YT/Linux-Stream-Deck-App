@@ -7,7 +7,7 @@
       content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Decksmith</title>
+    <title>DeckSmith</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -16,7 +16,7 @@
         <div class="brand">
           <span class="brand__mark" aria-hidden="true"></span>
           <div class="brand__copy">
-            <strong>Decksmith</strong>
+            <strong>DeckSmith</strong>
             <span>Desktop Controller</span>
           </div>
         </div>
@@ -35,15 +35,25 @@
             <span class="toolbar-label">Deck</span>
             <strong id="deck-title">Stream Deck</strong>
           </div>
-          <div class="toolbar-block">
+          <div class="toolbar-block toolbar-block--profile">
             <span class="toolbar-label">Profile</span>
-            <strong id="deck-mode">Default Profile</strong>
+            <div class="profile-picker">
+              <select id="profile-select" aria-label="Active profile"></select>
+              <button class="control-button control-button--secondary" id="profile-create-button" type="button">New</button>
+            </div>
+            <small id="deck-mode">Create focused layouts and switch them instantly.</small>
+          </div>
+          <div class="toolbar-block toolbar-block--focus">
+            <span class="toolbar-label">App Focus</span>
+            <strong id="focus-window-label">Waiting for focus detection</strong>
+            <small id="focus-window-meta">Linux-aware profile switching is ready for X11, GNOME Wayland, and Hyprland.</small>
           </div>
         </div>
 
         <div class="toolbar-group toolbar-group--status">
           <span class="status-chip" id="device-status">Checking hardware...</span>
           <span class="status-chip" id="obs-status-badge">OBS offline</span>
+          <span class="status-chip" id="focus-status-badge">Focus watcher idle</span>
         </div>
       </div>
 
@@ -136,8 +146,8 @@
                   <p class="rail-kicker">Import Plugin</p>
                   <h3>Install from URL</h3>
                   <p>
-                    Paste a GitHub repository or plugin-folder link now. Marketplace JSON feeds can also work later by using a
-                    URL like `marketplace.json#plugin-id`.
+                    Paste a GitHub repository, plugin zip, or plugin-folder link now. Marketplace JSON feeds can also work later
+                    by using a URL like `marketplace.json#plugin-id`.
                   </p>
                 </div>
 

@@ -3,6 +3,11 @@ import { buildHardwarePayload, drawKeyPreview } from './previewRenderer.mjs';
 const elements = {
   deckTitle: document.querySelector('#deck-title'),
   deckMode: document.querySelector('#deck-mode'),
+  profileSelect: document.querySelector('#profile-select'),
+  profileCreateButton: document.querySelector('#profile-create-button'),
+  focusWindowLabel: document.querySelector('#focus-window-label'),
+  focusWindowMeta: document.querySelector('#focus-window-meta'),
+  focusStatusBadge: document.querySelector('#focus-status-badge'),
   deckCopy: document.querySelector('#deck-copy'),
   deckGrid: document.querySelector('#deck-grid'),
   pluginCount: document.querySelector('#plugin-count'),
@@ -40,7 +45,8 @@ const state = {
   actionSearchQuery: '',
   lastHardwareDeckSignature: null,
   bridgeAvailable: true,
-  collapsedLibrarySections: new Set()
+  collapsedLibrarySections: new Set(),
+  passiveRefreshTimerId: null
 };
 
 const dragState = {
@@ -49,7 +55,7 @@ const dragState = {
 
 function getAppApi() {
   if (!window.streamDeckApp) {
-    throw new Error('Decksmith desktop bridge failed to load. Restart the app. If it still fails, the Electron preload bridge is not available.');
+    throw new Error('DeckSmith desktop bridge failed to load. Restart the app. If it still fails, the Electron preload bridge is not available.');
   }
 
   return window.streamDeckApp;
@@ -68,9 +74,35 @@ async function bootstrapApp() {
     state.data = createFallbackBootstrapState();
     ensureSelectionIsValid();
     renderApp();
-    setFeedback('Desktop bridge is unavailable right now, so Decksmith is showing a local UI preview instead of the live app state.', true);
+    setFeedback('Desktop bridge is unavailable right now, so DeckSmith is showing a local UI preview instead of the live app state.', true);
   }
 }
+
+elements.profileSelect.addEventListener('change', async () => {
+  const profileId = elements.profileSelect.value;
+
+  if (!profileId) {
+    return;
+  }
+
+  await refreshState(() => getAppApi().switchProfile({ profileId }), {
+    syncHardware: true
+  });
+  setFeedback(`Switched to the ${getActiveProfileName()} profile.`);
+});
+
+elements.profileCreateButton.addEventListener('click', async () => {
+  const name = window.prompt('Name the new DeckSmith profile.');
+
+  if (!name || !name.trim()) {
+    return;
+  }
+
+  await refreshState(() => getAppApi().createProfile({ name: name.trim() }), {
+    syncHardware: true
+  });
+  setFeedback(`Created the ${getActiveProfileName()} profile from the current layout.`);
+});
 
 elements.rescanButton.addEventListener('click', async () => {
   setFeedback('Rescanning for connected Stream Deck hardware...');
@@ -88,7 +120,7 @@ elements.pluginPreviewButton.addEventListener('click', async () => {
   const sourceUrl = elements.pluginImportInput.value.trim();
 
   if (!sourceUrl) {
-    setFeedback('Paste a plugin URL first so Decksmith can inspect it.', true);
+    setFeedback('Paste a plugin URL first so DeckSmith can inspect it.', true);
     return;
   }
 
@@ -111,7 +143,7 @@ elements.pluginImportButton.addEventListener('click', async () => {
   const sourceUrl = elements.pluginImportInput.value.trim();
 
   if (!sourceUrl) {
-    setFeedback('Paste a plugin URL first so Decksmith can import it.', true);
+    setFeedback('Paste a plugin URL first so DeckSmith can import it.', true);
     return;
   }
 
@@ -181,6 +213,7 @@ elements.obsRefreshScenesButton.addEventListener('click', async () => {
 });
 
 await bootstrapApp();
+startPassiveRefreshLoop();
 
 async function refreshState(loader, { syncHardware = false } = {}) {
   const previousSignature = getDeckSignature(state.data);
@@ -216,6 +249,8 @@ function ensureSelectionIsValid() {
 }
 
 function renderApp() {
+  renderProfileControls();
+  renderFocusState();
   renderDeckSummary();
   renderBridgeAvailability();
   renderObsPanel();
@@ -230,6 +265,8 @@ function renderBridgeAvailability() {
 
   elements.rescanButton.disabled = offline;
   elements.reloadPluginsButton.disabled = offline;
+  elements.profileSelect.disabled = offline;
+  elements.profileCreateButton.disabled = offline;
   elements.pluginImportButton.disabled = offline;
   elements.pluginPreviewButton.disabled = offline;
   elements.obsConnectButton.disabled = offline;
@@ -244,7 +281,7 @@ function renderBridgeAvailability() {
 }
 
 function renderDeckSummary() {
-  const { deck, plugins } = state.data;
+  const { deck } = state.data;
   const connectedDevice = deck.devices.find((device) => device.path === deck.activeDevicePath);
   const layoutLabel = `${deck.profile.columns} x ${deck.profile.rows}`;
   const deviceLabel = connectedDevice
@@ -260,14 +297,106 @@ function renderDeckSummary() {
   }
 
   elements.deckTitle.textContent = connectedDevice ? connectedDevice.modelName : 'Stream Deck';
-  elements.deckMode.textContent = deck.profile.isMock ? 'Default Profile' : 'Live Hardware Profile';
+  elements.deckMode.textContent = buildProfileModeText(deck, connectedDevice);
 
   const description = deck.profile.isMock
-    ? `No hardware is connected right now, so Decksmith is showing a mock ${layoutLabel} layout for setup and testing.`
+    ? `No hardware is connected right now, so DeckSmith is showing a mock ${layoutLabel} layout for setup and testing.`
     : `${deck.profile.productName} is connected. The editor grid, key sizing, and assignment layout now follow this device automatically.`;
   const setupHint = deck.setupHints?.[0];
 
   elements.deckCopy.textContent = setupHint ? `${description} ${setupHint}` : description;
+}
+
+function renderProfileControls() {
+  const profiles = state.data?.profiles?.profiles || [];
+  const activeProfileId = state.data?.profiles?.activeProfileId || '';
+  const currentSelection = elements.profileSelect.value;
+
+  elements.profileSelect.innerHTML = '';
+
+  for (const profile of profiles) {
+    const option = document.createElement('option');
+    option.value = profile.id;
+    option.textContent = profile.name;
+    option.selected = profile.id === activeProfileId;
+    elements.profileSelect.append(option);
+  }
+
+  if (!profiles.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No profiles available';
+    elements.profileSelect.append(option);
+  } else if (currentSelection && currentSelection === activeProfileId) {
+    elements.profileSelect.value = currentSelection;
+  } else {
+    elements.profileSelect.value = activeProfileId;
+  }
+}
+
+function renderFocusState() {
+  const activeWindow = state.data?.profiles?.activeWindow;
+
+  if (!activeWindow?.supported) {
+    elements.focusWindowLabel.textContent = 'Focus detection unavailable';
+    elements.focusWindowMeta.textContent = activeWindow?.lastError
+      || 'DeckSmith will keep using the selected profile until a Linux focus backend is available.';
+    elements.focusStatusBadge.textContent = 'Focus watcher idle';
+    elements.focusStatusBadge.classList.add('status-chip--warning');
+    elements.focusStatusBadge.classList.remove('status-chip--live');
+    return;
+  }
+
+  const descriptor = activeWindow.processName || activeWindow.appId || activeWindow.title || 'Unknown app';
+  const backendLabel = activeWindow.backend || 'linux';
+  const titleSuffix = activeWindow.title && activeWindow.title !== descriptor
+    ? ` - ${activeWindow.title}`
+    : '';
+
+  elements.focusWindowLabel.textContent = descriptor;
+  elements.focusWindowMeta.textContent = `Watching ${backendLabel}${titleSuffix}. Matching profile rules switch automatically when this changes.`;
+  elements.focusStatusBadge.textContent = `Focus: ${backendLabel}`;
+  elements.focusStatusBadge.classList.add('status-chip--live');
+  elements.focusStatusBadge.classList.remove('status-chip--warning');
+}
+
+function startPassiveRefreshLoop() {
+  if (!state.bridgeAvailable || state.passiveRefreshTimerId) {
+    return;
+  }
+
+  state.passiveRefreshTimerId = window.setInterval(() => {
+    if (!state.bridgeAvailable || isUserEditingForm()) {
+      return;
+    }
+
+    void refreshState(() => getAppApi().getBootstrapState());
+  }, 3000);
+}
+
+function isUserEditingForm() {
+  const activeElement = document.activeElement;
+
+  return Boolean(activeElement && matchesEditableElement(activeElement));
+}
+
+function matchesEditableElement(element) {
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName);
+}
+
+function buildProfileModeText(deck, connectedDevice) {
+  const activeProfile = getActiveProfile();
+  const activationSource = activeProfile?.lastActivationSource;
+
+  if (!connectedDevice && deck.profile.isMock) {
+    return `${activeProfile?.name || 'Default Profile'} on mock hardware`;
+  }
+
+  if (activationSource?.startsWith('auto:')) {
+    return `${activeProfile?.name || 'Default Profile'} auto-switched from ${activationSource.slice(5)}`;
+  }
+
+  return `${activeProfile?.name || 'Default Profile'} ready on live hardware`;
 }
 
 function renderObsPanel() {
@@ -547,7 +676,17 @@ function renderInspector() {
 
   if (!slot) {
     elements.selectionBadge.textContent = 'No key selected';
-    elements.inspectorContent.innerHTML = '<p class="empty-state">Select a key to inspect it, configure an action, and test it before going live.</p>';
+    elements.inspectorContent.innerHTML = '';
+
+    const stack = document.createElement('div');
+    stack.className = 'inspector-stack';
+
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'Select a key to inspect it, configure an action, and test it before going live.';
+
+    stack.append(empty, renderProfileAutomationPanel());
+    elements.inspectorContent.append(stack);
     return;
   }
 
@@ -644,7 +783,7 @@ function renderInspector() {
   wrapper.append(actionsBar);
 
   elements.inspectorContent.innerHTML = '';
-  elements.inspectorContent.append(wrapper);
+  elements.inspectorContent.append(wrapper, renderProfileAutomationPanel());
 }
 
 function renderAssignmentConfig(slot, action) {
@@ -683,6 +822,98 @@ function renderAssignmentConfig(slot, action) {
   }
 
   return fieldset;
+}
+
+function renderProfileAutomationPanel() {
+  const activeProfile = getActiveProfile();
+  const activeWindow = state.data?.profiles?.activeWindow;
+  const panel = document.createElement('section');
+  panel.className = 'config-form';
+  panel.innerHTML = `
+    <div>
+      <p class="rail-kicker">Profile Automation</p>
+      <h3>Application Awareness</h3>
+    </div>
+  `;
+
+  const summary = document.createElement('p');
+  summary.className = 'field-hint';
+  summary.textContent = activeWindow?.supported
+    ? `Current focus: ${buildActiveWindowSummary(activeWindow)}. Add a rule and DeckSmith will switch to ${activeProfile?.name || 'this profile'} automatically.`
+    : activeWindow?.lastError || 'Focus detection is waiting for a supported Linux backend.';
+  panel.append(summary);
+
+  const rules = Array.isArray(activeProfile?.autoSwitchRules) ? activeProfile.autoSwitchRules : [];
+  const rulesList = document.createElement('div');
+  rulesList.className = 'profile-rule-list';
+
+  if (!rules.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No auto-switch rules yet. Focus an app like OBS, then capture it below.';
+    rulesList.append(empty);
+  } else {
+    for (const rule of rules) {
+      const row = document.createElement('div');
+      row.className = 'profile-rule';
+      row.innerHTML = `
+        <div>
+          <strong>${formatRuleStrategy(rule.matchStrategy)}</strong>
+          <p>${formatRulePattern(rule)}</p>
+        </div>
+      `;
+
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'control-button control-button--secondary';
+      removeButton.textContent = 'Remove';
+      removeButton.addEventListener('click', async () => {
+        await saveProfileRules(activeProfile.id, rules.filter((candidate) => candidate.id !== rule.id));
+        setFeedback(`Removed one auto-switch rule from ${activeProfile.name}.`);
+      });
+
+      row.append(removeButton);
+      rulesList.append(row);
+    }
+  }
+
+  panel.append(rulesList);
+
+  const buttons = document.createElement('div');
+  buttons.className = 'button-row';
+
+  const appRuleButton = document.createElement('button');
+  appRuleButton.type = 'button';
+  appRuleButton.className = 'control-button';
+  appRuleButton.textContent = 'Use Focused App';
+  appRuleButton.disabled = !activeWindow?.supported || !(activeWindow.processName || activeWindow.appId);
+  appRuleButton.addEventListener('click', async () => {
+    await addRuleFromActiveWindow(activeProfile, 'processName');
+  });
+
+  const titleRuleButton = document.createElement('button');
+  titleRuleButton.type = 'button';
+  titleRuleButton.className = 'control-button control-button--secondary';
+  titleRuleButton.textContent = 'Use Window Title';
+  titleRuleButton.disabled = !activeWindow?.supported || !activeWindow.title;
+  titleRuleButton.addEventListener('click', async () => {
+    await addRuleFromActiveWindow(activeProfile, 'windowTitle');
+  });
+
+  const clearRulesButton = document.createElement('button');
+  clearRulesButton.type = 'button';
+  clearRulesButton.className = 'control-button control-button--secondary';
+  clearRulesButton.textContent = 'Clear Rules';
+  clearRulesButton.disabled = rules.length === 0;
+  clearRulesButton.addEventListener('click', async () => {
+    await saveProfileRules(activeProfile.id, []);
+    setFeedback(`Cleared all auto-switch rules from ${activeProfile.name}.`);
+  });
+
+  buttons.append(appRuleButton, titleRuleButton, clearRulesButton);
+  panel.append(buttons);
+
+  return panel;
 }
 
 function createConfigControl(slot, field) {
@@ -733,6 +964,66 @@ function createConfigControl(slot, field) {
   });
 
   return control;
+}
+
+async function addRuleFromActiveWindow(profile, matchStrategy) {
+  const activeWindow = state.data?.profiles?.activeWindow;
+
+  if (!profile || !activeWindow?.supported) {
+    return;
+  }
+
+  const pattern = matchStrategy === 'windowTitle'
+    ? activeWindow.title
+    : (activeWindow.processName || activeWindow.appId);
+
+  if (!pattern) {
+    setFeedback('DeckSmith could not find a matching focus value for that rule.', true);
+    return;
+  }
+
+  const nextRules = dedupeProfileRules([
+    ...(profile.autoSwitchRules || []),
+    {
+      matchStrategy,
+      matchType: 'includes',
+      pattern,
+      desktopBackend: activeWindow.backend || 'any',
+      enabled: true
+    }
+  ]);
+
+  await saveProfileRules(profile.id, nextRules);
+  setFeedback(`Saved an auto-switch rule for ${profile.name}.`);
+}
+
+async function saveProfileRules(profileId, autoSwitchRules) {
+  await refreshState(() => getAppApi().updateProfileRules({
+    profileId,
+    autoSwitchRules
+  }), {
+    syncHardware: true
+  });
+}
+
+function dedupeProfileRules(rules) {
+  const seen = new Set();
+
+  return rules.filter((rule) => {
+    const key = [
+      rule.matchStrategy || 'processName',
+      rule.matchType || 'includes',
+      String(rule.pattern || '').trim().toLowerCase(),
+      rule.desktopBackend || 'any'
+    ].join('|');
+
+    if (!String(rule.pattern || '').trim() || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 function resolveFieldPlaceholder(slot, field) {
@@ -1091,7 +1382,52 @@ function getDeckSignature(appState) {
     return null;
   }
 
-  return `${appState.deck.profile.id}:${appState.deck.activeDevicePath || 'mock'}`;
+  return `${appState.deck.profile.id}:${appState.layout?.profileId || 'default'}:${appState.deck.activeDevicePath || 'mock'}`;
+}
+
+function getProfileState() {
+  return state.data?.profiles || {
+    activeProfileId: 'default',
+    activeProfileName: 'Default Profile',
+    profiles: [],
+    activeWindow: null
+  };
+}
+
+function getActiveProfile() {
+  const profiles = getProfileState();
+
+  return profiles.profiles.find((profile) => profile.id === profiles.activeProfileId) || null;
+}
+
+function getActiveProfileName() {
+  return getActiveProfile()?.name || getProfileState().activeProfileName || 'Default Profile';
+}
+
+function buildActiveWindowSummary(activeWindow) {
+  const appLabel = activeWindow.processName || activeWindow.appId || 'Unknown app';
+  const titleLabel = activeWindow.title ? ` - ${activeWindow.title}` : '';
+  return `${appLabel}${titleLabel}`;
+}
+
+function formatRuleStrategy(matchStrategy) {
+  if (matchStrategy === 'windowTitle') {
+    return 'Window Title';
+  }
+
+  if (matchStrategy === 'appId') {
+    return 'App ID';
+  }
+
+  return 'Process Name';
+}
+
+function formatRulePattern(rule) {
+  const backend = rule.desktopBackend && rule.desktopBackend !== 'any'
+    ? ` on ${rule.desktopBackend}`
+    : ' on any backend';
+  const matchType = rule.matchType || 'includes';
+  return `${matchType} "${rule.pattern}"${backend}.`;
 }
 
 function getSlots() {
@@ -1112,7 +1448,7 @@ function getPlugin(pluginId) {
 
 function getPluginSourceText(plugin) {
   if (!plugin.source?.sourceUrl) {
-    return 'Bundled with Decksmith.';
+    return 'Bundled with DeckSmith.';
   }
 
   const importedAt = plugin.source.importedAt
@@ -1316,7 +1652,7 @@ function createFallbackBootstrapState() {
       id: 'io.decksmith.core',
       name: 'Core Actions',
       version: '0.1.0',
-      description: 'Built-in Decksmith actions for URLs, app launching, and shell commands.',
+      description: 'Built-in DeckSmith actions for URLs, app launching, and shell commands.',
       root: 'plugins/io.decksmith.core',
       actions: [
         {
@@ -1403,7 +1739,7 @@ function createFallbackBootstrapState() {
               type: 'text',
               description: 'Run a shell command. Keep it short and predictable for live use.',
               defaultValue: '',
-              placeholder: 'echo Decksmith',
+              placeholder: 'echo DeckSmith',
               optionsSource: null,
               options: [],
               resetOnChange: []
@@ -1423,7 +1759,7 @@ function createFallbackBootstrapState() {
               id: 'timeoutMs',
               label: 'Timeout (ms)',
               type: 'number',
-              description: 'How long Decksmith should wait before failing the command.',
+              description: 'How long DeckSmith should wait before failing the command.',
               defaultValue: 15000,
               placeholder: '15000',
               optionsSource: null,
@@ -1481,7 +1817,7 @@ function createFallbackBootstrapState() {
     'button:11': {
       actionId: 'io.decksmith.core:run-command',
       config: {
-        commandLine: 'echo Decksmith Alpha',
+        commandLine: 'echo DeckSmith Alpha',
         workingDirectory: '',
         timeoutMs: 15000
       },
@@ -1496,11 +1832,12 @@ function createFallbackBootstrapState() {
 
   return {
     app: {
-      name: 'Decksmith',
+      name: 'DeckSmith',
       pluginDirectory: 'plugins',
       bundledPluginDirectory: 'plugins',
       pluginImportExamples: [
         'https://github.com/owner/repo/tree/main/plugin-folder',
+        'https://example.com/decksmith-plugin.zip',
         'https://example.com/decksmith-marketplace.json#plugin-id'
       ]
     },
@@ -1600,10 +1937,36 @@ function createFallbackBootstrapState() {
     },
     layout: {
       deckId: profile.id,
+      profileId: 'default',
       slots: profile.buttons.map((button) => ({
         ...button,
         assignment: assignmentsBySlotId[button.slotId] || null
       }))
+    },
+    profiles: {
+      activeProfileId: 'default',
+      activeProfileName: 'Default Profile',
+      profiles: [
+        {
+          id: 'default',
+          name: 'Default Profile',
+          autoSwitchRules: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastActivatedAt: null,
+          lastActivationSource: null
+        }
+      ],
+      activeWindow: {
+        supported: false,
+        backend: null,
+        title: '',
+        processName: '',
+        appId: '',
+        pid: null,
+        detectedAt: null,
+        lastError: 'Linux focus detection requires the Electron desktop bridge.'
+      }
     },
     plugins: {
       plugins,

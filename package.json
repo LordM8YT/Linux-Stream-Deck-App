@@ -33,7 +33,8 @@
   },
   "dependencies": {
     "@elgato-stream-deck/node": "^7.6.3",
-    "obs-websocket-js": "^5.0.8"
+    "obs-websocket-js": "^5.0.8",
+    "unzipper": "^0.12.3"
   },
   "devDependencies": {
     "electron": "42.4.1",
@@ -41,7 +42,7 @@
   },
   "build": {
     "appId": "io.decksmith.app",
-    "productName": "Decksmith",
+    "productName": "DeckSmith",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "buildResources": "build",
@@ -77,13 +78,13 @@
       "executableName": "decksmith",
       "category": "Utility",
       "synopsis": "Open source Stream Deck control app for Linux creators.",
-      "description": "Decksmith is a Linux-first alpha alternative to the Elgato Stream Deck app with a polished desktop editor, built-in core actions, live OBS control, and a simple JavaScript plugin API.",
+      "description": "DeckSmith is a Linux-first alpha alternative to the Elgato Stream Deck app with a polished desktop editor, live OBS control, dynamic profiles, and a simple JavaScript plugin API.",
       "maintainer": "Patri",
-      "vendor": "Decksmith",
+      "vendor": "DeckSmith",
       "icon": "build/icon.svg",
       "desktop": {
         "entry": {
-          "Name": "Decksmith",
+          "Name": "DeckSmith",
           "Comment": "Open source Stream Deck controller for Linux creators",
           "Categories": "AudioVideo;Utility;",
           "Keywords": "streamdeck;obs;creator;linux;macro;",
@@ -114,7 +115,7 @@
       "target": [
         "portable"
       ],
-      "executableName": "Decksmith"
+      "executableName": "DeckSmith"
     }
   }
 }

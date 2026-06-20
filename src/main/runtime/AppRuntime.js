@@ -1,8 +1,10 @@
 const path = require('node:path');
 const { LayoutService } = require('../services/layout/LayoutService');
+const { LinuxActiveWindowService } = require('../services/linux/LinuxActiveWindowService');
 const { ObsService } = require('../services/obs/ObsService');
 const { PluginImportService } = require('../services/plugins/PluginImportService');
 const { PluginManager } = require('../services/plugins/PluginManager');
+const { ProfileService } = require('../services/profiles/ProfileService');
 const { AppStateStore } = require('../services/storage/AppStateStore');
 const { SystemActionService } = require('../services/system/SystemActionService');
 const { StreamDeckService } = require('../services/streamDeck/StreamDeckService');
@@ -18,6 +20,10 @@ class AppRuntime {
     });
     this.layoutService = new LayoutService({
       store: this.store
+    });
+    this.profileService = new ProfileService({
+      store: this.store,
+      layoutService: this.layoutService
     });
     this.obsService = new ObsService({
       store: this.store
@@ -44,6 +50,11 @@ class AppRuntime {
         void this.handleHardwareButtonDown(slotId);
       }
     });
+    this.activeWindowService = new LinuxActiveWindowService({
+      onFocusChanged: async (activeWindow) => {
+        await this.handleActiveWindowChanged(activeWindow);
+      }
+    });
   }
 
   async start() {
@@ -54,12 +65,14 @@ class AppRuntime {
       this.obsService.start(),
       this.streamDeckService.start()
     ]);
+    await this.activeWindowService.start();
 
     return this.getBootstrapState();
   }
 
   async dispose() {
     await Promise.all([
+      this.activeWindowService.dispose(),
       this.obsService.dispose(),
       this.streamDeckService.dispose()
     ]);
@@ -71,22 +84,25 @@ class AppRuntime {
 
   async getBootstrapState() {
     const deckState = this.streamDeckService.getState();
+    const activeProfileId = this.profileService.getActiveProfileId(deckState.profile);
 
     return {
       app: {
-        name: 'Decksmith',
+        name: 'DeckSmith',
         pluginDirectory: this.userPluginsDir,
         bundledPluginDirectory: this.bundledPluginsDir,
         pluginImportExamples: [
           'https://github.com/owner/repo',
           'https://github.com/owner/repo/tree/main/plugin-folder',
+          'https://example.com/decksmith-plugin.zip',
           'https://example.com/decksmith-marketplace.json#plugin-id'
         ]
       },
       deck: deckState,
       obs: this.obsService.getState(),
-      layout: this.layoutService.getDeckLayout(deckState.profile),
-      plugins: this.pluginManager.getCatalog()
+      layout: this.layoutService.getDeckLayout(deckState.profile, activeProfileId),
+      plugins: this.pluginManager.getCatalog(),
+      profiles: this.profileService.getState(deckState.profile, this.activeWindowService.getState())
     };
   }
 
@@ -133,7 +149,13 @@ class AppRuntime {
 
     const initialConfig = this.pluginManager.getDefaultConfigForAction(actionId);
 
-    await this.layoutService.assignAction(this.getCurrentDeckProfile(), slotId, actionId, initialConfig);
+    await this.layoutService.assignAction(
+      this.getCurrentDeckProfile(),
+      this.getCurrentProfileId(),
+      slotId,
+      actionId,
+      initialConfig
+    );
     return this.getBootstrapState();
   }
 
@@ -142,7 +164,12 @@ class AppRuntime {
       throw new Error('slotId is required to update assignment config.');
     }
 
-    await this.layoutService.updateAssignmentConfig(this.getCurrentDeckProfile(), slotId, config || {});
+    await this.layoutService.updateAssignmentConfig(
+      this.getCurrentDeckProfile(),
+      this.getCurrentProfileId(),
+      slotId,
+      config || {}
+    );
     return this.getBootstrapState();
   }
 
@@ -151,7 +178,7 @@ class AppRuntime {
       throw new Error('slotId is required to clear an action.');
     }
 
-    await this.layoutService.clearAction(this.getCurrentDeckProfile(), slotId);
+    await this.layoutService.clearAction(this.getCurrentDeckProfile(), this.getCurrentProfileId(), slotId);
     return this.getBootstrapState();
   }
 
@@ -165,7 +192,7 @@ class AppRuntime {
     }
 
     const deckProfile = this.getCurrentDeckProfile();
-    const layout = this.layoutService.getDeckLayout(deckProfile);
+    const layout = this.layoutService.getDeckLayout(deckProfile, this.getCurrentProfileId());
     const slot = layout.slots.find((candidate) => candidate.slotId === slotId);
 
     if (!slot?.assignment?.actionId) {
@@ -218,6 +245,39 @@ class AppRuntime {
     return this.getBootstrapState();
   }
 
+  async switchProfile({ profileId }) {
+    if (!profileId) {
+      throw new Error('profileId is required to switch profiles.');
+    }
+
+    await this.profileService.switchProfile(this.getCurrentDeckProfile(), profileId);
+    return this.getBootstrapState();
+  }
+
+  async createProfile({ name, cloneFromProfileId = null } = {}) {
+    const sourceProfileId = cloneFromProfileId || this.getCurrentProfileId();
+
+    await this.profileService.createProfile(this.getCurrentDeckProfile(), {
+      name,
+      cloneFromProfileId: sourceProfileId
+    });
+
+    return this.getBootstrapState();
+  }
+
+  async updateProfileRules({ profileId, autoSwitchRules }) {
+    if (!profileId) {
+      throw new Error('profileId is required to update profile rules.');
+    }
+
+    await this.profileService.updateProfileRules(this.getCurrentDeckProfile(), {
+      profileId,
+      autoSwitchRules
+    });
+
+    return this.getBootstrapState();
+  }
+
   async handleHardwareButtonDown(slotId) {
     const result = await this.triggerAssignedAction({
       slotId,
@@ -227,6 +287,16 @@ class AppRuntime {
     if (!result.ok && result.reason !== 'NO_ASSIGNMENT') {
       console.error(`Failed to trigger hardware action for ${slotId}:`, result.errorMessage || result.reason);
     }
+  }
+
+  async handleActiveWindowChanged(activeWindow) {
+    const deckProfile = this.getCurrentDeckProfile();
+
+    await this.profileService.applyAutoSwitch(deckProfile, activeWindow);
+  }
+
+  getCurrentProfileId() {
+    return this.profileService.getActiveProfileId(this.getCurrentDeckProfile());
   }
 }
 
